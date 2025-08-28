@@ -1,4 +1,4 @@
-# CapCut-Lite Video Editor
+# flowCFD Video Editor
 
 This project is a modern, web-based video editor inspired by CapCut's simplicity, focusing on rapid clip selection and automated editing workflows. It provides a lightweight, browser-based interface for a professional video editing experience.
 
