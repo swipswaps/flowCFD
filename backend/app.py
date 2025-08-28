@@ -7,6 +7,7 @@ from datetime import datetime
 
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import select, delete
 from sqlalchemy.orm import Session
@@ -32,6 +33,10 @@ Base.metadata.create_all(bind=engine)
 
 # ---- App + CORS
 app = FastAPI(title="CapCut-Lite Backend", version="1.0.0")
+
+# ---- Static Files Mount
+app.mount("/uploads", StaticFiles(directory=UPLOADS), name="uploads")
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # lock down in prod
@@ -361,7 +366,7 @@ async def export_worker(export_id: str):
             f.write(f"file '{p}'\n")
 
     # Concat
-    concat_ok = concat_mp4s(filelist, out_path)
+    concat_ok, stderr = concat_mp4s(filelist, out_path)
     with db() as s:
         exp = s.get(Export, export_id)
         if concat_ok and os.path.exists(out_path):
@@ -370,14 +375,15 @@ async def export_worker(export_id: str):
             exp.download_url = f"/api/exports/{export_id}/download"
         else:
             exp.status = "error"
-            exp.error_message = "Concat failed"
+            exp.error_message = f"Concat failed: {stderr or 'Unknown error'}"
         exp.updated_at = datetime.utcnow()
         s.commit()
 
     status_payload = {
         "status": "completed" if concat_ok else "error",
         "progress": 100 if concat_ok else 0,
-        "download_url": f"/api/exports/{export_id}/download" if concat_ok else None
+        "download_url": f"/api/exports/{export_id}/download" if concat_ok else None,
+        "error_message": f"Concat failed: {stderr or 'Unknown error'}" if not concat_ok else None
     }
     await bus.publish(export_id, status_payload)
 

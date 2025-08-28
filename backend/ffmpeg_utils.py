@@ -31,11 +31,13 @@ def extract_clip(src: str, start: float, duration: float, out_path: str) -> bool
         out_path
     ]
     p = subprocess.run(cmd, capture_output=True, text=True)
+    if p.returncode != 0:
+        print(f"--- FFmpeg Error (extract_clip) ---\nSTDOUT:\n{p.stdout}\nSTDERR:\n{p.stderr}\n---------------------------------")
     return p.returncode == 0
 
-def concat_mp4s(filelist_path: str, output_path: str) -> bool:
+def concat_mp4s(filelist_path: str, output_path: str) -> (bool, str):
     """
-    ffmpeg concat demuxer (file list).
+    ffmpeg concat demuxer (file list). Returns (success, stderr).
     """
     cmd = [
         "ffmpeg", "-y",
@@ -47,4 +49,6 @@ def concat_mp4s(filelist_path: str, output_path: str) -> bool:
         output_path
     ]
     p = subprocess.run(cmd, capture_output=True, text=True)
-    return p.returncode == 0
+    if p.returncode != 0:
+        print(f"--- FFmpeg Error (concat_mp4s) ---\nSTDOUT:\n{p.stdout}\nSTDERR:\n{p.stderr}\n----------------------------------")
+    return p.returncode == 0, p.stderr
