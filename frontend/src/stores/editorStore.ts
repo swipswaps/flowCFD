@@ -1,0 +1,39 @@
+import { create } from "zustand";
+
+interface EditorState {
+  playerCurrentTime: number;
+  playerDuration: number;
+  isPlaying: boolean;
+  markedIn: number | null;
+  markedOut: number | null;
+  selectedClipId: string | null;
+  activeVideoId: string | null;
+
+  setPlayerCurrentTime: (time: number) => void;
+  setPlayerDuration: (duration: number) => void;
+  setIsPlaying: (playing: boolean) => void;
+  setMarkedIn: (time: number | null) => void;
+  setMarkedOut: (time: number | null) => void;
+  setSelectedClipId: (id: string | null) => void;
+  setActiveVideoId: (id: string | null) => void;
+  clearMarks: () => void;
+}
+
+export const useEditorStore = create<EditorState>((set) => ({
+  playerCurrentTime: 0,
+  playerDuration: 0,
+  isPlaying: false,
+  markedIn: null,
+  markedOut: null,
+  selectedClipId: null,
+  activeVideoId: null,
+
+  setPlayerCurrentTime: (time) => set({ playerCurrentTime: time }),
+  setPlayerDuration: (duration) => set({ playerDuration: duration }),
+  setIsPlaying: (playing) => set({ isPlaying: playing }),
+  setMarkedIn: (time) => set({ markedIn: time }),
+  setMarkedOut: (time) => set({ markedOut: time }),
+  setSelectedClipId: (id) => set({ selectedClipId: id }),
+  setActiveVideoId: (id) => set({ activeVideoId: id }),
+  clearMarks: () => set({ markedIn: null, markedOut: null }),
+}));

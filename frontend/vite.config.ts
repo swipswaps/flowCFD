@@ -6,11 +6,14 @@ export default defineConfig({
   server: {
     proxy: {
       "/api": "http://localhost:8000",
-      "/uploads": "http://localhost:8000",
       "/ws": {
         target: "ws://localhost:8000",
         ws: true
-      }
+      },
+      // NEW: This line will catch requests to /static/uploads/*
+      "/static/uploads": "http://localhost:8000",
+      // Ensure thumbnails are also proxied correctly
+      "/static/thumbnails": "http://localhost:8000"
     }
   }
 });

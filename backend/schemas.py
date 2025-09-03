@@ -1,13 +1,13 @@
-# backend/schemas.py
 from pydantic import BaseModel, Field
 from typing import Optional, List
 
 class VideoOut(BaseModel):
     id: str
     filename: str
-    path: str
+    path: str # Internal server path, not directly exposed to frontend for playback
     duration: Optional[float] = None
     thumbnail_url: Optional[str] = None
+    url: Optional[str] = None # NEW: Public URL for video playback in the frontend
     class Config:
         from_attributes = True
 

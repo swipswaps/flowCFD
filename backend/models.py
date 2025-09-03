@@ -14,7 +14,7 @@ class Video(Base):
     filename: Mapped[str] = mapped_column(String, nullable=False)
     path: Mapped[str] = mapped_column(String, nullable=False)
     duration: Mapped[float | None] = mapped_column(Float, nullable=True)
-    thumbnail_url: Mapped[str | None] = mapped_column(String, nullable=True)
+    thumbnail_url: Mapped[str | None] = mapped_column(String, nullable=True) # NEW: thumbnail
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     clips: Mapped[list["Clip"]] = relationship("Clip", back_populates="video", cascade="all, delete-orphan")
     exports: Mapped[list["Export"]] = relationship("Export", back_populates="video", cascade="all, delete-orphan")

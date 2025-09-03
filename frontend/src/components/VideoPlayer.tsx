@@ -1,56 +1,223 @@
-import React, { useEffect, useRef } from 'react';
-import videojs from 'video.js';
-import 'video.js/dist/video-js.css';
+import React, { useRef, useEffect, useCallback } from "react";
+import ReactPlayer from "react-player/lazy";
+import toast from "react-hot-toast";
+import { useEditorStore } from "../stores/editorStore";
+import { formatTime } from "../utils/time";
 
 interface VideoPlayerProps {
-  options: any;
-  src?: { src: string; type: string; };
-  onReady: (player: any) => void;
+  videoUrl: string;
+  videoDuration: number;
 }
 
-const VideoPlayer: React.FC<VideoPlayerProps> = ({ options, src, onReady }) => {
-  const videoNode = useRef<HTMLVideoElement>(null);
-  const playerRef = useRef<any>(null);
+export default function VideoPlayer({ videoUrl, videoDuration }: VideoPlayerProps) {
+  const playerRef = useRef<ReactPlayer>(null);
+  const {
+    playerCurrentTime,
+    setPlayerCurrentTime,
+    setPlayerDuration,
+    isPlaying,
+    setIsPlaying,
+    markedIn,
+    setMarkedIn,
+    markedOut,
+    setMarkedOut,
+    clearMarks,
+  } = useEditorStore();
 
   useEffect(() => {
-    // Only initialize the player if the video node exists and there's a source
-    if (videoNode.current && !playerRef.current && src) {
-      playerRef.current = videojs(videoNode.current, options, () => {
-        onReady(playerRef.current);
-      });
+    console.log("VideoPlayer: videoUrl received:", videoUrl);
+    if (videoUrl && !playerRef.current?.getInternalPlayer()) {
+        // Attempt to load video if URL is present but player hasn't initialized
+        // This can sometimes help with stubborn loads, though ReactPlayer usually handles it.
+        // For a more robust fix, ensure the URL is always fully qualified (absolute).
+    }
+  }, [videoUrl]);
+
+  const handleProgress = useCallback((state: { playedSeconds: number }) => {
+    setPlayerCurrentTime(state.playedSeconds);
+  }, [setPlayerCurrentTime]);
+
+  const handleDuration = useCallback((duration: number) => {
+    setPlayerDuration(duration);
+  }, [setPlayerDuration]);
+
+  const handleSeek = useCallback((time: number) => {
+    if (playerRef.current) {
+      playerRef.current.seekTo(time, 'seconds');
+      setPlayerCurrentTime(time);
+    }
+  }, [setPlayerCurrentTime]);
+
+  const handleKeyDown = useCallback((e: KeyboardEvent) => {
+    if (!videoUrl) return;
+    if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+        return;
     }
 
-    // If the source changes, update it
-    if (playerRef.current && src) {
-      playerRef.current.src(src);
+    const currentTime = playerRef.current?.getCurrentTime() || 0;
+    
+    switch (e.key) {
+      case ' ':
+        e.preventDefault();
+        setIsPlaying(!isPlaying);
+        break;
+      case 'i':
+      case 'I':
+        setMarkedIn(currentTime);
+        toast.success(`IN marked at ${formatTime(currentTime)}`);
+        break;
+      case 'o':
+      case 'O':
+        if (markedIn !== null && currentTime <= markedIn) {
+          toast.error("OUT point must be after IN point.");
+          return;
+        }
+        setMarkedOut(currentTime);
+        toast.success(`OUT marked at ${formatTime(currentTime)}`);
+        break;
+      case 'j':
+      case 'J':
+        handleSeek(Math.max(0, currentTime - 5));
+        break;
+      case 'l':
+      case 'L':
+        handleSeek(Math.min(videoDuration, currentTime + 5));
+        break;
+      case 'k':
+      case 'K':
+        clearMarks();
+        toast("IN/OUT marks cleared.");
+        break;
+      default:
+        break;
     }
-  }, [options, src, onReady]);
+  }, [videoUrl, isPlaying, setIsPlaying, setMarkedIn, setMarkedOut, markedIn, handleSeek, videoDuration, clearMarks]);
 
-  // Dispose on unmount
   useEffect(() => {
-    const player = playerRef.current;
+    window.addEventListener('keydown', handleKeyDown);
     return () => {
-      if (player && !player.isDisposed()) {
-        player.dispose();
-        playerRef.current = null;
-      }
+      window.removeEventListener('keydown', handleKeyDown);
     };
-  }, []);
-
-  // Don't render the video element until there's a source to play
-  if (!src) {
-    return (
-      <div className="flex items-center justify-center bg-black aspect-video">
-        <p className="text-slate-400">Upload a video to begin</p>
-      </div>
-    );
-  }
+  }, [handleKeyDown]);
 
   return (
-    <div data-vjs-player>
-      <video ref={videoNode} className="video-js vjs-big-play-centered" />
+    <div style={{ width: "100%", maxWidth: "800px", margin: "0 auto" }}>
+      <div style={{ position: "relative", paddingTop: "56.25%" }}>
+        {videoUrl ? (
+          <ReactPlayer
+            ref={playerRef}
+            url={videoUrl}
+            playing={isPlaying}
+            controls={true}
+            width="100%"
+            height="100%"
+            style={{ position: "absolute", top: 0, left: 0 }}
+            onProgress={handleProgress}
+            onDuration={handleDuration}
+            onPlay={() => setIsPlaying(true)}
+            onPause={() => setIsPlaying(false)}
+            onEnded={() => setIsPlaying(false)}
+            progressInterval={100}
+            config={{
+              file: {
+                attributes: {
+                  controlsList: 'nofullscreen',
+                  type: 'video/mp4' // Explicitly set the MIME type here
+                }
+              }
+            }}
+            onError={(e) => console.error("ReactPlayer Error:", e)}
+          />
+        ) : (
+          <div style={{ 
+            position: "absolute", top: 0, left: 0, width: "100%", height: "100%",
+            backgroundColor: "#444", display: "flex", justifyContent: "center", alignItems: "center",
+            color: "#eee", fontSize: "1.2em", border: "1px dashed #777", borderRadius: "8px"
+          }}>
+            Upload a video file above to begin editing.
+          </div>
+        )}
+      </div>
+
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "8px", padding: "8px 0" }}>
+        <span>Current: {formatTime(playerCurrentTime)} / Duration: {formatTime(videoDuration)}</span>
+        <div style={{ display: "flex", gap: "8px" }}>
+          <button onClick={() => setIsPlaying(!isPlaying)} disabled={!videoUrl}>
+            {isPlaying ? "Pause" : "Play"}
+          </button>
+          <button onClick={() => handleSeek(Math.max(0, playerCurrentTime - 5))} disabled={!videoUrl}>-5s</button>
+          <button onClick={() => handleSeek(Math.min(videoDuration, playerCurrentTime + 5))} disabled={!videoUrl}>+5s</button>
+          <button onClick={() => { setMarkedIn(playerCurrentTime); toast.success(`IN marked at ${formatTime(playerCurrentTime)}`); }} disabled={!videoUrl}>
+            Mark IN (I)
+          </button>
+          <button onClick={() => { 
+            if (markedIn !== null && playerCurrentTime <= markedIn) {
+              toast.error("OUT point must be after IN point.");
+              return;
+            }
+            setMarkedOut(playerCurrentTime); 
+            toast.success(`OUT marked at ${formatTime(playerCurrentTime)}`); 
+          }} disabled={!videoUrl}>
+            Mark OUT (O)
+          </button>
+          <button onClick={clearMarks} disabled={!videoUrl}>Clear Marks (K)</button>
+        </div>
+      </div>
+
+      <div style={{ width: "100%", height: "10px", background: "#333", position: "relative", borderRadius: "5px", overflow: "hidden" }}>
+        {videoUrl && videoDuration > 0 && (
+          <>
+            {markedIn !== null && (
+              <div
+                style={{
+                  position: "absolute",
+                  left: `${(markedIn / videoDuration) * 100}%`,
+                  width: "2px",
+                  height: "100%",
+                  background: "blue",
+                  zIndex: 2,
+                }}
+                title={`IN: ${formatTime(markedIn)}`}
+              />
+            )}
+            {markedOut !== null && (
+              <div
+                style={{
+                  position: "absolute",
+                  left: `${(markedOut / videoDuration) * 100}%`,
+                  width: "2px",
+                  height: "100%",
+                  background: "red",
+                  zIndex: 2,
+                }}
+                title={`OUT: ${formatTime(markedOut)}`}
+              />
+            )}
+            {markedIn !== null && markedOut !== null && markedIn < markedOut && (
+              <div
+                style={{
+                  position: "absolute",
+                  left: `${(markedIn / videoDuration) * 100}%`,
+                  width: `${((markedOut - markedIn) / videoDuration) * 100}%`,
+                  height: "100%",
+                  background: "rgba(0, 255, 0, 0.3)",
+                  zIndex: 1,
+                }}
+              />
+            )}
+            <div
+              style={{
+                position: "absolute",
+                left: 0,
+                width: `${(playerCurrentTime / videoDuration) * 100}%`,
+                height: "100%",
+                background: "white",
+                zIndex: 0,
+              }}
+            />
+          </>
+        )}
+      </div>
     </div>
   );
-};
-
-export default VideoPlayer;
+}

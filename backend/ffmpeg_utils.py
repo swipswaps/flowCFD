@@ -1,4 +1,3 @@
-# backend/ffmpeg_utils.py
 import os
 import subprocess
 from typing import Iterable
@@ -16,6 +15,26 @@ def ffprobe_duration(path: str) -> float | None:
     except Exception:
         return None
 
+def generate_thumbnail(video_path: str, output_thumbnail_path: str, time_offset: float = 1.0) -> bool:
+    """
+    Generates a thumbnail for a video at a specific time offset.
+    """
+    cmd = [
+        "ffmpeg", "-y",
+        "-ss", str(time_offset),
+        "-i", video_path,
+        "-vframes", "1",
+        "-q:v", "2", # quality (2 is good)
+        "-f", "image2",
+        output_thumbnail_path
+    ]
+    try:
+        subprocess.run(cmd, check=True, capture_output=True)
+        return True
+    except subprocess.CalledProcessError as e:
+        print(f"Error generating thumbnail: {e.stderr}")
+        return False
+
 def extract_clip(src: str, start: float, duration: float, out_path: str) -> bool:
     """
     Known-to-work pattern for trimming with re-encode for stable concat.
@@ -31,13 +50,11 @@ def extract_clip(src: str, start: float, duration: float, out_path: str) -> bool
         out_path
     ]
     p = subprocess.run(cmd, capture_output=True, text=True)
-    if p.returncode != 0:
-        print(f"--- FFmpeg Error (extract_clip) ---\nSTDOUT:\n{p.stdout}\nSTDERR:\n{p.stderr}\n---------------------------------")
     return p.returncode == 0
 
-def concat_mp4s(filelist_path: str, output_path: str) -> (bool, str):
+def concat_mp4s(filelist_path: str, output_path: str) -> bool:
     """
-    ffmpeg concat demuxer (file list). Returns (success, stderr).
+    ffmpeg concat demuxer (file list).
     """
     cmd = [
         "ffmpeg", "-y",
@@ -49,6 +66,4 @@ def concat_mp4s(filelist_path: str, output_path: str) -> (bool, str):
         output_path
     ]
     p = subprocess.run(cmd, capture_output=True, text=True)
-    if p.returncode != 0:
-        print(f"--- FFmpeg Error (concat_mp4s) ---\nSTDOUT:\n{p.stdout}\nSTDERR:\n{p.stderr}\n----------------------------------")
-    return p.returncode == 0, p.stderr
+    return p.returncode == 0

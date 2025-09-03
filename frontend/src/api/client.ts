@@ -1,9 +1,10 @@
 export type VideoOut = {
   id: string;
   filename: string;
-  path: string;
+  path: string; // Internal, not for direct browser use
   duration?: number | null;
   thumbnail_url?: string | null;
+  url?: string | null; // Public URL for video playback
 };
 
 export type ClipOut = {
@@ -72,6 +73,16 @@ export async function updateClip(clip_id: string, input: {
   return res.json();
 }
 
+export async function reorderClips(video_id: string, clip_ids: string[]): Promise<ClipOut[]> {
+  const res = await fetch(`/api/clips/reorder/${video_id}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(clip_ids)
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
 export async function deleteClip(clip_id: string): Promise<{ ok: boolean }> {
   const res = await fetch(`/api/clips/${clip_id}`, { method: "DELETE" });
   if (!res.ok) throw new Error(await res.text());
@@ -111,13 +122,22 @@ export async function getExportStatus(export_id: string): Promise<ExportStatus> 
 }
 
 export function openExportWebSocket(export_id: string, onMessage: (s: ExportStatus) => void): WebSocket {
-  const ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws/exports/${export_id}`);
+  const protocol = location.protocol === "https:" ? "wss" : "ws";
+  const ws = new WebSocket(`${protocol}://${location.host}/ws/exports/${export_id}`);
   ws.onmessage = (ev) => {
     try {
       onMessage(JSON.parse(ev.data));
-    } catch {}
+    } catch (e) {
+      console.error("Failed to parse WS message:", e, ev.data);
+    }
   };
-  // simple keepalive
-  ws.onopen = () => setInterval(() => ws.readyState === 1 && ws.send("ping"), 15000);
+  ws.onerror = (error) => {
+    console.error("WebSocket Error:", error);
+  };
+  ws.onopen = () => setInterval(() => {
+    if (ws.readyState === ws.OPEN) {
+      ws.send(JSON.stringify({ type: "ping" }));
+    }
+  }, 15000);
   return ws;
 }
