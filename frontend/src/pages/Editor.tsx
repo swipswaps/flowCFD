@@ -5,6 +5,7 @@ import {
   uploadVideo, getVideo, VideoOut,
   markClip, listClips, ClipOut,
   buildProject, startExport, getExportStatus, openExportWebSocket,
+  getLatestActiveExport // NEW
 } from "../api/client";
 import { useEditorStore } from "../stores/editorStore";
 import VideoPlayer from "../components/VideoPlayer";
@@ -95,6 +96,56 @@ export default function Editor() {
     }
   });
 
+  // NEW: Effect to check for and resume monitoring an active export on video load
+  useEffect(() => {
+    if (activeVideoId) {
+      // Reset status for new video
+      setExportId(null);
+      setExportStatus({progress: 0, status: "idle"});
+
+      getLatestActiveExport(activeVideoId).then(activeExport => {
+        if (activeExport) {
+          toast.success("Resumed monitoring an in-progress export.");
+          setExportId(activeExport.id);
+          // Trigger the monitoring logic (this is a simplified version of the logic in startExportMutation)
+          monitorExport(activeExport.id);
+        }
+      });
+    }
+  }, [activeVideoId]);
+
+  // NEW: Extracted monitoring logic to be reusable
+  const monitorExport = (currentExportId: string) => {
+    const ws = openExportWebSocket(currentExportId, (s) => setExportStatus({
+      progress: s.progress, status: s.status, download_url: s.download_url, error_message: s.error_message,
+      estimated_time_remaining_seconds: s.estimated_time_remaining_seconds
+    }));
+
+    const timer = setInterval(async () => {
+      try {
+        const s = await getExportStatus(currentExportId);
+        setExportStatus({
+          progress: s.progress, status: s.status, download_url: s.download_url, error_message: s.error_message,
+          estimated_time_remaining_seconds: s.estimated_time_remaining_seconds
+        });
+        if (s.status === "completed" || s.status === "error") {
+          clearInterval(timer);
+          ws.close();
+          if (s.status === "completed") toast.success("Export completed!");
+          else if (s.status === "error") toast.error(`Export failed: ${s.error_message || "Unknown error"}`);
+        }
+      } catch (e) {
+        console.error("Polling error:", e);
+        clearInterval(timer);
+        ws.close();
+        toast.error("Export polling failed. Check server logs.");
+      }
+    }, 3000);
+
+    return () => { try { ws.close(); } catch {} clearInterval(timer); };
+  };
+
+  // --- Mutations (showing startExportMutation with new logic) ---
   const startExportMutation = useMutation({
     mutationFn: startExport,
     onMutate: () => {
@@ -104,40 +155,7 @@ export default function Editor() {
       toast.dismiss();
       toast.success("Export started!");
       setExportId(exp.id);
-      setExportStatus({
-        progress: exp.progress, 
-        status: exp.status, 
-        download_url: exp.download_url,
-        estimated_time_remaining_seconds: undefined // Reset or set initial
-      });
-      
-      const ws = openExportWebSocket(exp.id, (s) => setExportStatus({
-        progress: s.progress, status: s.status, download_url: s.download_url, error_message: s.error_message,
-        estimated_time_remaining_seconds: s.estimated_time_remaining_seconds
-      }));
-
-      const timer = setInterval(async () => {
-        try {
-          const s = await getExportStatus(exp.id);
-          setExportStatus({
-            progress: s.progress, status: s.status, download_url: s.download_url, error_message: s.error_message,
-            estimated_time_remaining_seconds: s.estimated_time_remaining_seconds
-          });
-          if (s.status === "completed" || s.status === "error") {
-            clearInterval(timer);
-            ws.close();
-            if (s.status === "completed") toast.success("Export completed!");
-            else if (s.status === "error") toast.error(`Export failed: ${s.error_message || "Unknown error"}`);
-          }
-        } catch (e) {
-          console.error("Polling error:", e);
-          clearInterval(timer);
-          ws.close();
-          toast.error("Export polling failed. Check server logs.");
-        }
-      }, 3000);
-
-      return () => { try { ws.close(); } catch {} clearInterval(timer); };
+      monitorExport(exp.id); // Use the reusable monitoring function
     },
     onError: (error) => {
       toast.dismiss();

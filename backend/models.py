@@ -31,6 +31,7 @@ class Clip(Base):
 class Export(Base):
     __tablename__ = "exports"
     id: Mapped[str] = mapped_column(String, primary_key=True, default=uid)
+    idempotency_key: Mapped[str | None] = mapped_column(String, nullable=True, unique=True) # NEW
     video_id: Mapped[str] = mapped_column(String, ForeignKey("videos.id", ondelete="CASCADE"))
     status: Mapped[str] = mapped_column(String, default="queued")  # queued|processing|completed|error
     progress: Mapped[int] = mapped_column(Integer, default=0)      # 0..100

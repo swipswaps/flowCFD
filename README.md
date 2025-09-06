@@ -11,17 +11,18 @@ The application is composed of two main parts: a frontend web interface and a ba
 The backend is a **FastAPI** application that handles all heavy lifting. Its primary responsibilities are managing project data, processing video files, and communicating progress back to the user.
 
 1.  **API Server (`app.py`):** Exposes a RESTful API for all frontend operations. This includes endpoints for uploading videos, defining clips, building projects, and starting exports. It also hosts a WebSocket endpoint for real-time progress updates during video rendering.
-2.  **Database (`database.py`, `models.py`):** Uses **SQLAlchemy** to manage a database (defaulting to SQLite) that stores information about uploaded videos, their associated clips, and export jobs.
-3.  **Video Processing (`ffmpeg_utils.py`):** A utility module that wraps the powerful **FFmpeg** command-line tool to perform core tasks like getting video duration, generating thumbnails, and creating thumbnail strips for the UI.
-4.  **Project Generation (`create_openshot_project.py`):** When a user wants to combine their clips, the backend uses this script to dynamically generate an **OpenShot** project file (`.osp`). This file is a JSON representation of the timeline, referencing the source video and the user-defined IN/OUT points for each clip.
-5.  **Video Rendering (`direct_render.py`):** To export the final video, the backend uses this script. It reads the `.osp` file, uses FFmpeg to extract each individual clip into a temporary file, and then uses FFmpeg's concat feature to stitch them together into the final MP4. This method is robust and avoids needing the full OpenShot library for rendering.
+2.  **Configuration (`config.py`):** All configuration, such as database connection strings and CORS origins, is managed via environment variables for security and flexibility, powered by Pydantic's `BaseSettings`.
+3.  **Database (`database.py`, `models.py`):** Uses **SQLAlchemy** to manage a **PostgreSQL** database that stores information about uploaded videos, their associated clips, and export jobs. It is designed for production use.
+4.  **Video Processing (`ffmpeg_utils.py`):** A utility module that wraps the powerful **FFmpeg** command-line tool to perform core tasks like getting video duration, generating thumbnails, and creating thumbnail strips for the UI. It uses secure, temporary directories for intermediate file processing.
+5.  **Project Generation (`create_openshot_project.py`):** When a user wants to combine their clips, the backend uses this script to dynamically generate an **OpenShot** project file (`.osp`). This file is a JSON representation of the timeline.
+6.  **Video Rendering (`direct_render.py`):** To export the final video, the backend uses this script. It reads the `.osp` file, uses FFmpeg to extract each individual clip into a temporary file in a secure location, and then uses FFmpeg's concat feature to stitch them together into the final MP4.
 
 ### Frontend Architecture
 
-The frontend is a modern **React** single-page application built with **Vite**. It is designed to be responsive and provide a smooth user experience.
+The frontend is a modern **React** single-page application built with **Vite**. It is designed to be responsive and provide a smooth, resilient user experience.
 
-1.  **Main View (`Editor.tsx`):** This is the central component where the user interacts with the application. It contains the logic for file uploads, video playback, and communicating with the backend API.
-2.  **State Management (`stores/editorStore.ts`):** The application uses **Zustand**, a lightweight state management library, to handle global UI state. This includes tracking the active video, the user's current IN/OUT marks, and player status (like play/pause).
+1.  **Main View (`Editor.tsx`):** This is the central component where the user interacts with the application. It contains the logic for file uploads, video playback, and communicating with the backend API. It's capable of resuming the monitoring of an in-progress export even after a page refresh.
+2.  **State Management (`stores/editorStore.ts`):** The application uses **Zustand**, a lightweight state management library, to handle global UI state.
 3.  **Server Communication (`api/client.ts`):** All communication with the backend is managed through a dedicated API client, which uses **TanStack React Query** to handle data fetching, caching, and mutations. This makes the UI more resilient and responsive.
 4.  **Components (`components/`):**
     *   `VideoPlayer.tsx`: A reusable component that wraps `react-player` to provide video playback, seeking, and marking functionality.
@@ -59,10 +60,19 @@ Follow these instructions to set up and run the project locally.
 - **Python 3.10+**
 - **Node.js 16+** and **npm**
 - **FFmpeg**: Must be installed and available in your system's PATH.
+- **PostgreSQL**: A running PostgreSQL server. You will need to create a database (e.g., `flowcfd`) and have the connection URL handy.
 
 ### Installation & Setup
 
-1.  **Set up the backend:**
+1.  **Configure the Backend Environment:**
+    *   Navigate to the `backend/` directory.
+    *   Create a file named `.env`.
+    *   Add your PostgreSQL database URL to this file:
+        ```
+        DATABASE_URL=postgresql://your_user:your_password@localhost/flowcfd
+        ```
+
+2.  **Set up the backend:**
 
     The backend is powered by FastAPI. The `run.sh` script handles the installation of dependencies and starts the server.
 
@@ -72,7 +82,7 @@ Follow these instructions to set up and run the project locally.
     ```
     This will install the necessary Python packages in a local virtual environment (`.venv`) and start the backend server on `http://localhost:8000`.
 
-2.  **Set up the frontend:**
+3.  **Set up the frontend:**
 
     The frontend is a React application built with Vite. Open a **new terminal** for this step.
 
@@ -117,9 +127,12 @@ Follow these instructions to set up and run the project locally.
 The backend exposes a RESTful API for the frontend to interact with. Here are the main endpoints:
 
 - `POST /api/videos/upload`: Upload a video file.
-- `POST /api/clips/mark`: Mark a new clip with start and end times.
-- `POST /api/projects/build`: Build an OpenShot project from the marked clips.
-- `POST /api/exports/start`: Start the export process for a project.
-- `GET /api/exports/{export_id}/status`: Get the status of an export.
-- `GET /api/exports/{export_id}/download`: Download the final rendered video.
+- `POST /api/clips/mark`: Creates a new clip.
+- `DELETE /api/clips/{clip_id}`: Deletes a clip.
+- `POST /api/clips/reorder/{video_id}`: Re-orders the clips for a video.
+- `POST /api/projects/build`: Builds an OpenShot project from the marked clips.
+- `POST /api/exports/start`: Starts the export process. This endpoint is **idempotent** and accepts an `Idempotency-Key` header to prevent duplicate exports.
+- `GET /api/exports/{export_id}/status`: Gets the status of an export.
+- `GET /api/videos/{video_id}/exports/latest`: Gets the latest active export for a video, used for resuming state.
+- `GET /api/exports/{export_id}/download`: Gets the download URL for a completed export.
 - `WS /ws/exports/{export_id}`: WebSocket endpoint for real-time export progress.

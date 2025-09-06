@@ -101,10 +101,22 @@ export async function buildProject(video_id: string): Promise<{ video_id: string
 export async function startExport(video_id: string): Promise<ExportOut> {
   const res = await fetch(`/api/exports/start`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      "Idempotency-Key": crypto.randomUUID()
+    },
     body: JSON.stringify({ video_id })
   });
   if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function getLatestActiveExport(video_id: string): Promise<ExportOut | null> {
+  const res = await fetch(`/api/videos/${video_id}/exports/latest`);
+  if (!res.ok) throw new Error(await res.text());
+  if (res.status === 204 || res.headers.get("content-length") === "0") {
+    return null; // Handle cases where no active export is found
+  }
   return res.json();
 }
 
