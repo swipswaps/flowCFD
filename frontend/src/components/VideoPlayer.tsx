@@ -26,11 +26,6 @@ export default function VideoPlayer({ videoUrl, videoDuration }: VideoPlayerProp
 
   useEffect(() => {
     console.log("VideoPlayer: videoUrl received:", videoUrl);
-    if (videoUrl && !playerRef.current?.getInternalPlayer()) {
-        // Attempt to load video if URL is present but player hasn't initialized
-        // This can sometimes help with stubborn loads, though ReactPlayer usually handles it.
-        // For a more robust fix, ensure the URL is always fully qualified (absolute).
-    }
   }, [videoUrl]);
 
   const handleProgress = useCallback((state: { playedSeconds: number }) => {
@@ -49,24 +44,24 @@ export default function VideoPlayer({ videoUrl, videoDuration }: VideoPlayerProp
   }, [setPlayerCurrentTime]);
 
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
-    if (!videoUrl) return;
+    if (!videoUrl) return; // Only enable shortcuts if a video is loaded
     if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
-        return;
+        return; // Don't trigger shortcuts if typing in an input field
     }
 
     const currentTime = playerRef.current?.getCurrentTime() || 0;
     
     switch (e.key) {
-      case ' ':
-        e.preventDefault();
+      case ' ': // Spacebar for play/pause
+        e.preventDefault(); // Prevent page scrolling
         setIsPlaying(!isPlaying);
         break;
-      case 'i':
+      case 'i': // Mark In
       case 'I':
         setMarkedIn(currentTime);
         toast.success(`IN marked at ${formatTime(currentTime)}`);
         break;
-      case 'o':
+      case 'o': // Mark Out
       case 'O':
         if (markedIn !== null && currentTime <= markedIn) {
           toast.error("OUT point must be after IN point.");
@@ -75,15 +70,15 @@ export default function VideoPlayer({ videoUrl, videoDuration }: VideoPlayerProp
         setMarkedOut(currentTime);
         toast.success(`OUT marked at ${formatTime(currentTime)}`);
         break;
-      case 'j':
+      case 'j': // Seek backward 5 seconds
       case 'J':
         handleSeek(Math.max(0, currentTime - 5));
         break;
-      case 'l':
+      case 'l': // Seek forward 5 seconds
       case 'L':
         handleSeek(Math.min(videoDuration, currentTime + 5));
         break;
-      case 'k':
+      case 'k': // Clear marks
       case 'K':
         clearMarks();
         toast("IN/OUT marks cleared.");

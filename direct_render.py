@@ -3,11 +3,12 @@ import json
 import subprocess
 import sys
 import os
+import tempfile # NEW: Import tempfile module
 
 def render_from_osp(osp_path, output_path):
     """
     Reads an OpenShot project file and renders it using FFmpeg directly.
-    This bypasses all OpenShot export issues.
+    This bypasses all OpenShot export issues and uses a secure temporary directory.
     """
     
     if not os.path.exists(osp_path):
@@ -41,12 +42,12 @@ def render_from_osp(osp_path, output_path):
     print(f"Found {len(clips)} clips in project")
     print(f"Source video: {source_video}")
     
-    # Create a temporary file list for FFmpeg concat
-    concat_file = "temp_concat.txt"
-    temp_files = []
-    
-    try:
-        # Extract each clip as a temporary file
+    # NEW: Use a temporary directory for all intermediate files
+    with tempfile.TemporaryDirectory() as temp_dir:
+        concat_file_path = os.path.join(temp_dir, "concat.txt")
+        temp_files = []
+        
+        # Extract each clip as a temporary file inside the temp_dir
         for i, clip in enumerate(clips):
             start_time = clip.get('start', 0)
             end_time = clip.get('end', 0)
@@ -56,17 +57,17 @@ def render_from_osp(osp_path, output_path):
                 print(f"Skipping clip {i+1}: invalid duration")
                 continue
             
-            temp_filename = f"temp_clip_{i:03d}.mp4"
+            # Securely create temp filename in our temp directory
+            temp_filename = os.path.join(temp_dir, f"clip_{i:03d}.mp4")
             temp_files.append(temp_filename)
             
-            # Extract this clip using FFmpeg
             cmd = [
-                'ffmpeg', '-y',  # -y to overwrite existing files
+                'ffmpeg', '-y',
                 '-i', source_video,
                 '-ss', str(start_time),
                 '-t', str(duration),
-                '-c:v', 'libx264',  # CPU-based video encoding
-                '-c:a', 'aac',      # Standard audio codec
+                '-c:v', 'libx264',
+                '-c:a', 'aac',
                 '-avoid_negative_ts', 'make_zero',
                 temp_filename
             ]
@@ -76,26 +77,28 @@ def render_from_osp(osp_path, output_path):
             
             if result.returncode != 0:
                 print(f"Error extracting clip {i+1}: {result.stderr}")
-                continue
+                # Using a context manager means we don't need to manually clean up here
+                return False # Exit early on failure
         
         if not temp_files:
             print("Error: No clips were successfully extracted")
             return False
         
         # Create concat file for FFmpeg
-        with open(concat_file, 'w') as f:
+        with open(concat_file_path, 'w') as f:
             for temp_file in temp_files:
-                f.write(f"file '{temp_file}'\n")
+                # FFmpeg concat requires a specific format
+                f.write(f"file '{os.path.abspath(temp_file)}'\n")
         
         # Concatenate all clips into final video
         final_cmd = [
             'ffmpeg', '-y',
             '-f', 'concat',
             '-safe', '0',
-            '-i', concat_file,
+            '-i', concat_file_path,
             '-c:v', 'libx264',
             '-c:a', 'aac',
-            '-movflags', '+faststart',  # Optimize for web playback
+            '-movflags', '+faststart',
             output_path
         ]
         
@@ -109,14 +112,7 @@ def render_from_osp(osp_path, output_path):
             print(f"Error creating final video: {result.stderr}")
             return False
             
-    finally:
-        # Clean up temporary files
-        for temp_file in temp_files:
-            if os.path.exists(temp_file):
-                os.remove(temp_file)
-        if os.path.exists(concat_file):
-            os.remove(concat_file)
-    
+    # The temporary directory and its contents are automatically removed here
     return False
 
 if __name__ == "__main__":

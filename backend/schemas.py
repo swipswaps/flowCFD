@@ -1,13 +1,13 @@
 from pydantic import BaseModel, Field
-from typing import Optional, List
+from typing import Optional, List, Literal # NEW: Import Literal
 
 class VideoOut(BaseModel):
     id: str
     filename: str
-    path: str # Internal server path, not directly exposed to frontend for playback
     duration: Optional[float] = None
     thumbnail_url: Optional[str] = None
-    url: Optional[str] = None # NEW: Public URL for video playback in the frontend
+    url: Optional[str] = None # Public URL for video playback in the frontend
+    thumbnail_strip_url: Optional[str] = None # NEW: URL for video thumbnail strip
     class Config:
         from_attributes = True
 
@@ -34,7 +34,8 @@ class ExportStartIn(BaseModel):
 class ExportOut(BaseModel):
     id: str
     video_id: str
-    status: str
+    # CORRECTED: Use a tuple or typing.Literal for string enums in Pydantic
+    status: Literal["queued", "processing", "completed", "error"] # Changed from "queued" | "processing" | ...
     progress: int
     download_url: Optional[str] = None
     class Config:
@@ -42,7 +43,9 @@ class ExportOut(BaseModel):
 
 class ExportStatusOut(BaseModel):
     id: str
-    status: str
+    # CORRECTED: Use a tuple or typing.Literal for string enums in Pydantic
+    status: Literal["queued", "processing", "completed", "error"] # Changed from "queued" | "processing" | ...
     progress: int
     download_url: Optional[str] = None
     error_message: Optional[str] = None
+    estimated_time_remaining_seconds: Optional[float] = None # NEW: ETA for export

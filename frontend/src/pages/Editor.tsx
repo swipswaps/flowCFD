@@ -10,6 +10,7 @@ import { useEditorStore } from "../stores/editorStore";
 import VideoPlayer from "../components/VideoPlayer";
 import Timeline from "../components/Timeline";
 import { formatTime } from "../utils/time";
+import "./Editor.css"; // NEW: Import the stylesheet
 
 export default function Editor() {
   const qc = useQueryClient();
@@ -37,7 +38,7 @@ export default function Editor() {
   });
 
   const [exportId, setExportId] = React.useState<string | null>(null);
-  const [exportStatus, setExportStatus] = React.useState<{progress:number; status:string; download_url?:string|null; error_message?:string|null}>({progress:0,status:"idle"});
+  const [exportStatus, setExportStatus] = React.useState<{progress:number; status:string; download_url?:string|null; error_message?:string|null; estimated_time_remaining_seconds?:number|null}>({progress:0,status:"idle"});
 
   // --- Mutations ---
   const upload = useMutation({
@@ -103,17 +104,24 @@ export default function Editor() {
       toast.dismiss();
       toast.success("Export started!");
       setExportId(exp.id);
-      setExportStatus({progress: exp.progress, status: exp.status, download_url: exp.download_url});
+      setExportStatus({
+        progress: exp.progress, 
+        status: exp.status, 
+        download_url: exp.download_url,
+        estimated_time_remaining_seconds: undefined // Reset or set initial
+      });
       
       const ws = openExportWebSocket(exp.id, (s) => setExportStatus({
-        progress: s.progress, status: s.status, download_url: s.download_url, error_message: s.error_message
+        progress: s.progress, status: s.status, download_url: s.download_url, error_message: s.error_message,
+        estimated_time_remaining_seconds: s.estimated_time_remaining_seconds
       }));
 
       const timer = setInterval(async () => {
         try {
           const s = await getExportStatus(exp.id);
           setExportStatus({
-            progress: s.progress, status: s.status, download_url: s.download_url, error_message: s.error_message
+            progress: s.progress, status: s.status, download_url: s.download_url, error_message: s.error_message,
+            estimated_time_remaining_seconds: s.estimated_time_remaining_seconds
           });
           if (s.status === "completed" || s.status === "error") {
             clearInterval(timer);
@@ -192,95 +200,75 @@ export default function Editor() {
   };
 
 
-  // Basic Styling
-  const sectionStyle: React.CSSProperties = {
-    marginTop: "24px",
-    padding: "16px",
-    border: "1px solid #444",
-    borderRadius: "8px",
-    backgroundColor: "#2a2a2a",
-    color: "#eee",
-  };
+  // NEW: Helper for dynamic class names on the progress bar
+  const progressBarClasses = `progress-bar-fill status-${exportStatus.status}`;
 
-  const buttonStyle: React.CSSProperties = {
-    padding: "8px 16px",
-    backgroundColor: "#007bff",
-    color: "white",
-    border: "none",
-    borderRadius: "4px",
-    cursor: "pointer",
-    fontSize: "16px",
-    marginRight: "8px",
-    transition: "background-color 0.2s",
-  };
-
-  const disabledButtonStyle: React.CSSProperties = {
-    ...buttonStyle,
-    backgroundColor: "#555",
-    cursor: "not-allowed",
+  const formatEta = (seconds: number | null | undefined): string => {
+    if (seconds === null || seconds === undefined || isNaN(seconds) || seconds < 0) {
+      return "N/A";
+    }
+    if (seconds < 60) return `${Math.ceil(seconds)}s`;
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = Math.ceil(seconds % 60);
+    return `${minutes}m ${remainingSeconds}s`;
   };
 
   return (
-    <div style={{ padding: "24px", fontFamily: "ui-sans-serif, system-ui", backgroundColor: "#1e1e1e", minHeight: "100vh" }}>
-      <h1 style={{ color: "#eee", textAlign: "center", marginBottom: "32px" }}>CapCut-Lite Editor</h1>
+    <div className="editor-container">
+      <h1>CapCut-Lite Editor</h1>
 
-      <section style={sectionStyle}>
-        <h2 style={{ color: "#eee", marginBottom: "16px" }}>1) Upload Video</h2>
+      <section className="editor-section">
+        <h2>1) Upload Video</h2>
         <input type="file" accept="video/*" onChange={handleFileUpload} disabled={upload.isPending} />
         {upload.isPending && <p>Uploading...</p>}
         {activeVideo && (
-          <div style={{ marginTop: "16px", display: "flex", alignItems: "center", gap: "16px" }}>
+          <div className="upload-info">
             {activeVideo.thumbnail_url && (
-                <img src={activeVideo.thumbnail_url} alt="Video Thumbnail" style={{ width: "100px", height: "auto", borderRadius: "4px" }} />
+                <img src={activeVideo.thumbnail_url} alt="Video Thumbnail" />
             )}
-            <div>
+            <div className="upload-info-meta">
                 <p><b>{activeVideo.filename}</b></p>
                 <p>Duration: {formatTime(activeVideo.duration || 0)}</p>
-                <p style={{ fontSize: "12px", color: "#bbb" }}>ID: {activeVideo.id}</p>
+                <p className="video-id">ID: {activeVideo.id}</p>
             </div>
           </div>
         )}
       </section>
 
-      {/* Section 2: Video Player & Clip Marking - Always render */}
-      <section style={sectionStyle}>
-        <h2 style={{ color: "#eee", marginBottom: "16px" }}>2) Video Player & Clip Marking</h2>
-        {/* Pass activeVideo.url, which will be "" if no video is uploaded */}
+      <section className="editor-section">
+        <h2>2) Video Player & Clip Marking</h2>
         <VideoPlayer videoUrl={activeVideo?.url || ""} videoDuration={activeVideo?.duration || 0} />
-        <div style={{ marginTop: "16px", textAlign: "center" }}>
+        <div className="marking-controls">
             <button 
                 onClick={handleAddClip} 
-                style={(!activeVideoId || markedIn === null || markedOut === null || markedOut <= markedIn || (activeVideo && markedOut > activeVideo.duration!) || addClip.isPending) ? disabledButtonStyle : buttonStyle}
+                className="btn"
                 disabled={!activeVideoId || markedIn === null || markedOut === null || markedOut <= markedIn || (activeVideo && markedOut > activeVideo.duration!) || addClip.isPending}
             >
                 {addClip.isPending ? "Adding..." : "Add Clip to Timeline"}
             </button>
-            <p style={{ marginTop: "8px", color: "#bbb" }}>
+            <p className="marks-display">
               Current Marks: IN: {markedIn !== null ? formatTime(markedIn) : "--:--:--"} | OUT: {markedOut !== null ? formatTime(markedOut) : "--:--:--"}
             </p>
         </div>
       </section>
 
-      {/* Section: Timeline - Always render */}
-      <section style={sectionStyle}>
-        {/* Pass activeVideo for disabled states in Timeline component if needed */}
+      <section className="editor-section">
         <Timeline clips={clips} videoDuration={activeVideo?.duration || 0} activeVideo={activeVideo} />
       </section>
 
-      {/* Section 3: Build Project & Export - Always render */}
-      <section style={sectionStyle}>
-        <h2 style={{ color: "#eee", marginBottom: "16px" }}>3) Build Project & Export</h2>
-        <div style={{ display: "flex", gap: "16px", alignItems: "center" }}>
+      <section className="editor-section">
+        <h2>3) Build Project & Export</h2>
+        <div className="export-controls">
             <button
                 onClick={handleBuildProject}
-                style={(!activeVideoId || clips.length === 0 || buildProjectMutation.isPending) ? disabledButtonStyle : buttonStyle}
+                className="btn"
                 disabled={!activeVideoId || clips.length === 0 || buildProjectMutation.isPending}
             >
                 {buildProjectMutation.isPending ? "Building..." : "Build .osp Project"}
             </button>
             <button
                 onClick={handleStartExport}
-                style={(!activeVideoId || clips.length === 0 || startExportMutation.isPending) ? disabledButtonStyle : buttonStyle}
+                className="btn"
                 disabled={!activeVideoId || clips.length === 0 || startExportMutation.isPending}
             >
                 {startExportMutation.isPending ? "Starting Export..." : "Start Export"}
@@ -288,25 +276,24 @@ export default function Editor() {
         </div>
         
         {exportId && (
-          <div style={{ marginTop: "24px", padding: "12px", border: "1px dashed #666", borderRadius: "4px", backgroundColor: "#333" }}>
-            <h3 style={{ color: "#eee", marginBottom: "8px" }}>Export Status: {exportStatus.status}</h3>
-            <div style={{ width: "100%", height: "10px", backgroundColor: "#555", borderRadius: "5px", overflow: "hidden" }}>
+          <div className="export-status-container">
+            <h3>Export Status: {exportStatus.status}</h3>
+            <div className="progress-bar-container">
               <div
-                style={{
-                  width: `${exportStatus.progress}%`,
-                  height: "100%",
-                  backgroundColor: exportStatus.status === "completed" ? "#4CAF50" : (exportStatus.status === "error" ? "#f44336" : "#007bff"),
-                  transition: "width 0.3s ease-in-out",
-                }}
+                className={progressBarClasses}
+                style={{ width: `${exportStatus.progress}%` }}
               />
             </div>
-            <p style={{ marginTop: "8px" }}>Progress: {exportStatus.progress}%</p>
+            <p>Progress: {exportStatus.progress}%</p>
+            {exportStatus.status === "processing" && exportStatus.estimated_time_remaining_seconds !== null && (
+              <p className="eta-display">ETA: {formatEta(exportStatus.estimated_time_remaining_seconds)}</p>
+            )}
             {exportStatus.error_message && (
-              <p style={{ color: "#f44336", marginTop: "8px" }}>Error: {exportStatus.error_message}</p>
+              <p className="error-message">Error: {exportStatus.error_message}</p>
             )}
             {exportStatus.download_url && exportStatus.status === "completed" && (
-              <p style={{ marginTop: "16px" }}>
-                <a href={exportStatus.download_url} download style={{ color: "#4CAF50", textDecoration: "none", fontWeight: "bold" }}>
+              <p className="download-link-container">
+                <a href={exportStatus.download_url} download className="download-link">
                   Download Final MP4
                 </a>
               </p>

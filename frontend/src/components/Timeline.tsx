@@ -11,20 +11,22 @@ interface TimelineProps {
   activeVideo: VideoOut | null; // Pass activeVideo to get thumbnail_url
 }
 
+// Define the expected strip height and frame interval from backend generation
+// These should ideally come from backend metadata, but for now, match backend's ffmpeg_utils
+const THUMBNAIL_STRIP_HEIGHT = 80; // pixels
+const THUMBNAIL_FRAME_INTERVAL = 5; // seconds
+
 export default function Timeline({ clips, videoDuration, activeVideo }: TimelineProps) {
   const qc = useQueryClient();
-  const { playerCurrentTime, setPlayerCurrentTime, markedIn, markedOut, selectedClipId, setSelectedClipId } = useEditorStore();
+  const { playerCurrentTime, setPlayerCurrentTime, selectedClipId, setSelectedClipId, setIsPlaying } = useEditorStore();
   const timelineRef = useRef<HTMLDivElement>(null);
   
   const [timelineClips, setTimelineClips] = useState(clips);
+  const [hoveredClipId, setHoveredClipId] = useState<string | null>(null);
 
   useEffect(() => {
     setTimelineClips(clips);
   }, [clips]);
-
-  const clipWidthPercentage = (clip: ClipOut) => {
-    return ((clip.end_time - clip.start_time) / videoDuration) * 100;
-  };
 
   const calculateTotalTimelineDuration = useCallback(() => {
     return timelineClips.reduce((sum, clip) => sum + (clip.end_time - clip.start_time), 0);
@@ -132,7 +134,6 @@ export default function Timeline({ clips, videoDuration, activeVideo }: Timeline
       const clipDuration = clip.end_time - clip.start_time;
       if (playerCurrentTime >= clip.start_time && playerCurrentTime <= clip.end_time) {
         const timeInClip = playerCurrentTime - clip.start_time;
-        const percentageInClip = (timeInClip / clipDuration);
         const totalTimelineDuration = calculateTotalTimelineDuration();
         if (totalTimelineDuration === 0) return 0;
         return ((totalDurationBeforeCurrentTime + timeInClip) / totalTimelineDuration) * 100;
@@ -144,22 +145,40 @@ export default function Timeline({ clips, videoDuration, activeVideo }: Timeline
   
   const totalTimelineDuration = calculateTotalTimelineDuration();
 
-  const getThumbnailClipStyle = useCallback((clip: ClipOut) => {
-    if (!activeVideo?.thumbnail_url || !activeVideo.duration || activeVideo.duration === 0) {
+  const getThumbnailClipStyle = useCallback((clip: ClipOut, isHovered: boolean) => {
+    if (!activeVideo?.thumbnail_strip_url || !activeVideo.duration || activeVideo.duration === 0) {
       return {};
     }
-    // Calculate position of the clip's start time relative to the video's total duration
-    // This is to position the background image correctly so the clip's start frame is visible.
-    const backgroundPositionX = -(clip.start_time / activeVideo.duration) * 100;
+
+    // Calculate the frame index for the clip's start time on the strip
+    const frameIndex = Math.floor(clip.start_time / THUMBNAIL_FRAME_INTERVAL);
+    
+    // Estimate width of a single frame in the strip based on strip height (e.g., 16:9 aspect)
+    // This assumes the strip was generated with frames of THUMBNAIL_STRIP_HEIGHT
+    const estimatedFrameWidth = THUMBNAIL_STRIP_HEIGHT * (16 / 9); // Assuming 16:9 aspect ratio for frames
+    
+    // Calculate background-position-x to "scroll" the strip to the correct frame
+    const backgroundPositionX = -(frameIndex * estimatedFrameWidth);
 
     return {
-      backgroundImage: `url(${activeVideo.thumbnail_url})`,
-      backgroundSize: 'auto 100%', // Scale height to fit, width auto
-      backgroundPositionX: `${backgroundPositionX}%`,
+      backgroundImage: `url(${activeVideo.thumbnail_strip_url})`,
+      backgroundSize: 'auto 100%', // Scale height to fit, width auto (to maintain aspect ratio of the strip)
+      backgroundPositionX: `${backgroundPositionX}px`, // Use pixels for precise positioning
       backgroundRepeat: 'no-repeat',
-      filter: 'brightness(0.7)' // Slightly dim thumbnail to make text readable
+      filter: 'brightness(0.7)', // Slightly dim thumbnail to make text readable
+      transition: 'transform 0.1s ease-out, filter 0.1s ease-out, z-index 0.1s', // Smooth transition for hover
+      transform: isHovered ? 'scale(1.05)' : 'scale(1)', // 'Grow' effect on hover
+      zIndex: isHovered ? 11 : (isSelected ? 5 : 1), // Bring hovered clip to front, selected secondary
+      overflow: 'hidden', // Ensure background doesn't bleed outside clip boundary
     };
-  }, [activeVideo]);
+  }, [activeVideo, hoveredClipId, selectedClipId]);
+
+
+  const handleClipClick = useCallback((clip: ClipOut) => {
+    setSelectedClipId(clip.id);
+    setPlayerCurrentTime(clip.start_time); // Seek video player to clip start
+    setIsPlaying(true); // Start playing from clip start
+  }, [setSelectedClipId, setPlayerCurrentTime, setIsPlaying]);
 
 
   return (
@@ -170,7 +189,7 @@ export default function Timeline({ clips, videoDuration, activeVideo }: Timeline
         style={{
           display: "flex",
           position: "relative",
-          height: "80px",
+          height: `${THUMBNAIL_STRIP_HEIGHT}px`, // Match timeline height to strip height
           border: "1px solid #555",
           borderRadius: "4px",
           backgroundColor: "#222",
@@ -200,17 +219,20 @@ export default function Timeline({ clips, videoDuration, activeVideo }: Timeline
           const clipAbsoluteDuration = clip.end_time - clip.start_time;
           const percentageOfTotal = totalTimelineDuration > 0 ? (clipAbsoluteDuration / totalTimelineDuration) * 100 : 0;
           const isSelected = selectedClipId === clip.id;
+          const isHovered = hoveredClipId === clip.id;
 
           return (
             <div
               key={clip.id}
-              onClick={() => setSelectedClipId(clip.id)}
+              onClick={() => handleClipClick(clip)}
+              onMouseEnter={() => setHoveredClipId(clip.id)}
+              onMouseLeave={() => setHoveredClipId(null)}
               style={{
                 flexShrink: 0,
                 width: `${percentageOfTotal}%`,
                 height: "100%",
-                backgroundColor: isSelected ? "#4CAF50" : "#007BFF",
-                border: isSelected ? "2px solid yellow" : "1px solid #1a1a1a",
+                backgroundColor: isSelected ? "rgba(76, 175, 80, 0.5)" : "rgba(0, 123, 255, 0.5)", // Transparent background to see thumbnail
+                border: isSelected ? "2px solid yellow" : (isHovered ? "1px solid white" : "1px solid #1a1a1a"),
                 boxSizing: "border-box",
                 display: "flex",
                 flexDirection: "column",
@@ -221,11 +243,11 @@ export default function Timeline({ clips, videoDuration, activeVideo }: Timeline
                 fontWeight: "bold",
                 cursor: "pointer",
                 position: "relative",
-                ...getThumbnailClipStyle(clip) // Apply thumbnail style
+                ...getThumbnailClipStyle(clip, isHovered)
               }}
               title={`Clip ${index + 1}: ${formatTime(clip.start_time)} - ${formatTime(clip.end_time)}`}
             >
-              <div style={{ zIndex: 1, textShadow: '1px 1px 2px rgba(0,0,0,0.8)' }}> {/* Ensure text is on top */}
+              <div style={{ zIndex: 1, textShadow: '1px 1px 2px rgba(0,0,0,0.8)' }}>
                 Clip {index + 1}
                 <div style={{ fontSize: "10px", marginTop: "4px" }}>
                   {formatTime(clip.start_time)} - {formatTime(clip.end_time)}
@@ -238,7 +260,7 @@ export default function Timeline({ clips, videoDuration, activeVideo }: Timeline
 
       {activeVideo && selectedClipId && (
         <div style={{ background: "#333", padding: "16px", borderRadius: "8px", marginTop: "16px" }}>
-          <h3>Selected Clip: {selectedClipId}</h3>
+          <h3>Selected Clip: {timelineClips.find(c => c.id === selectedClipId)?.title || `Clip ${timelineClips.findIndex(c => c.id === selectedClipId) + 1}`}</h3>
           {timelineClips.find(c => c.id === selectedClipId) && (
             <>
               <div style={{ display: "flex", gap: "8px", marginBottom: "8px" }}>

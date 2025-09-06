@@ -5,6 +5,7 @@ export type VideoOut = {
   duration?: number | null;
   thumbnail_url?: string | null;
   url?: string | null; // Public URL for video playback
+  thumbnail_strip_url?: string | null; // NEW
 };
 
 export type ClipOut = {
@@ -113,6 +114,7 @@ export type ExportStatus = {
   progress: number;
   download_url?: string | null;
   error_message?: string | null;
+  estimated_time_remaining_seconds?: number | null; // NEW
 };
 
 export async function getExportStatus(export_id: string): Promise<ExportStatus> {

@@ -1,4 +1,3 @@
-# backend/models.py
 import uuid
 from sqlalchemy import Column, String, Float, Integer, DateTime, ForeignKey, Text
 from sqlalchemy.orm import relationship, Mapped, mapped_column
@@ -14,7 +13,8 @@ class Video(Base):
     filename: Mapped[str] = mapped_column(String, nullable=False)
     path: Mapped[str] = mapped_column(String, nullable=False)
     duration: Mapped[float | None] = mapped_column(Float, nullable=True)
-    thumbnail_url: Mapped[str | None] = mapped_column(String, nullable=True) # NEW: thumbnail
+    thumbnail_url: Mapped[str | None] = mapped_column(String, nullable=True)
+    thumbnail_strip_url: Mapped[str | None] = mapped_column(String, nullable=True) # THIS MUST BE PRESENT
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     clips: Mapped[list["Clip"]] = relationship("Clip", back_populates="video", cascade="all, delete-orphan")
     exports: Mapped[list["Export"]] = relationship("Export", back_populates="video", cascade="all, delete-orphan")
@@ -41,5 +41,5 @@ class Export(Base):
     osp_path: Mapped[str | None] = mapped_column(String, nullable=True)
     output_path: Mapped[str | None] = mapped_column(String, nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
-
+    estimated_time_remaining_seconds: Mapped[float | None] = mapped_column(Float, nullable=True)
     video: Mapped["Video"] = relationship("Video", back_populates="exports")
