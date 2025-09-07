@@ -6,7 +6,8 @@ import {
   markClip, listClips, ClipOut,
   buildProject, startExport, getExportStatus, openExportWebSocket,
   getLatestActiveExport, // NEW
-  getTimelineClips, getVideos, ClipWithVideoOut // NEW: Multi-video timeline
+  getTimelineClips, getVideos, ClipWithVideoOut, // NEW: Multi-video timeline
+  clearTimeline // NEW: Clear timeline function
 } from "../api/client";
 import { useEditorStore } from "../stores/editorStore";
 import VideoPlayer from "../components/VideoPlayer";
@@ -175,6 +176,22 @@ export default function Editor() {
     onError: (error) => {
       toast.dismiss();
       toast.error(`Failed to start export: ${error.message}`);
+    }
+  });
+
+  const clearTimelineMutation = useMutation({
+    mutationFn: clearTimeline,
+    onMutate: () => {
+      toast.loading("Clearing timeline...");
+    },
+    onSuccess: (result) => {
+      toast.dismiss();
+      toast.success(result.message);
+      qc.invalidateQueries({ queryKey: ["timeline-clips"] });
+    },
+    onError: (error) => {
+      toast.dismiss();
+      toast.error(`Failed to clear timeline: ${error.message}`);
     }
   });
 
@@ -353,6 +370,16 @@ export default function Editor() {
       </section>
 
       <section className="editor-section">
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
+          <h2>🎬 Timeline ({timelineClips?.length || 0} clips)</h2>
+          <button 
+            className="btn btn-danger"
+            onClick={() => clearTimelineMutation.mutate()}
+            disabled={clearTimelineMutation.isPending || (timelineClips?.length || 0) === 0}
+          >
+            {clearTimelineMutation.isPending ? "Clearing..." : "Clear Timeline"}
+          </button>
+        </div>
         <Timeline 
           clips={timelineClips} 
           videoDuration={activeVideo?.duration || 0} 

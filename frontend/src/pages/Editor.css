@@ -48,6 +48,17 @@
     cursor: not-allowed;
 }
 
+.btn-danger {
+    background-color: #dc3545;
+    border-color: #dc3545;
+    color: white;
+}
+
+.btn-danger:hover:not(:disabled) {
+    background-color: #c82333;
+    border-color: #bd2130;
+}
+
 .btn:hover:not(:disabled) {
     background-color: #0056b3;
 }

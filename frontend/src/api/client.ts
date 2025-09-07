@@ -165,6 +165,15 @@ export async function deleteClip(clip_id: string): Promise<{ ok: boolean }> {
   return res.json();
 }
 
+export async function clearTimeline(): Promise<{ message: string }> {
+  const res = await fetch(`/api/timeline/clear`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${authToken}` }
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
 export async function buildProject(video_id: string): Promise<{ video_id: string; osp: string }> {
   const res = await fetch(`/api/projects/build?video_id=${encodeURIComponent(video_id)}`, {
     method: "POST",
