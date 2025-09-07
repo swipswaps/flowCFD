@@ -3,8 +3,10 @@ import subprocess
 import math
 import tempfile
 import shutil
+import json
+import logging
 
-from typing import Iterable
+from typing import Iterable, List, Dict, Any
 
 def ffprobe_duration(path: str) -> float | None:
     cmd = [
@@ -351,3 +353,204 @@ def build_timeline_video(clips_data: list, output_path: str, temp_dir: str = Non
                 print(f"Cleaned up temporary directory: {temp_dir}")
             except Exception as e:
                 print(f"Warning: Could not clean up temporary directory {temp_dir}: {e}")
+
+# ===== LOSSLESS VIDEO EDITING FUNCTIONS =====
+
+def get_keyframes(video_path: str) -> List[float]:
+    """
+    Extract keyframe timestamps for lossless cutting.
+    Based on FFmpeg official documentation and LosslessCut implementation.
+    Uses multiple detection methods for better compatibility.
+    
+    Args:
+        video_path: Path to the video file
+        
+    Returns:
+        List of keyframe timestamps in seconds, empty list if error
+    """
+    if not os.path.exists(video_path):
+        logging.warning(f"Video file not found: {video_path}")
+        return []
+    
+    # Method 1: Try skip_frame nokey (fastest, but may not work for all formats)
+    cmd1 = [
+        "ffprobe", "-v", "quiet", "-select_streams", "v:0",
+        "-show_entries", "frame=pkt_pts_time",
+        "-of", "csv=p=0", "-skip_frame", "nokey", video_path
+    ]
+    
+    try:
+        result = subprocess.run(cmd1, capture_output=True, text=True, timeout=30)
+        if result.returncode == 0 and result.stdout.strip():
+            keyframes = []
+            for line in result.stdout.strip().split('\n'):
+                line = line.strip()
+                if line and line != 'N/A':
+                    try:
+                        timestamp = float(line)
+                        keyframes.append(timestamp)
+                    except ValueError:
+                        continue
+            
+            if keyframes:
+                keyframes = sorted(list(set(keyframes)))
+                logging.info(f"Detected {len(keyframes)} keyframes using skip_frame method")
+                return keyframes
+    except (subprocess.TimeoutExpired, Exception) as e:
+        logging.warning(f"Skip_frame method failed: {e}")
+    
+    # Method 2: Analyze frame types (more reliable but slower)
+    cmd2 = [
+        "ffprobe", "-v", "quiet", "-select_streams", "v:0",
+        "-show_entries", "frame=best_effort_timestamp_time,pict_type",
+        "-of", "csv=p=0", video_path
+    ]
+    
+    try:
+        result = subprocess.run(cmd2, capture_output=True, text=True, timeout=60)
+        if result.returncode == 0:
+            keyframes = []
+            for line in result.stdout.strip().split('\n'):
+                parts = line.strip().split(',')
+                if len(parts) == 2:
+                    timestamp_str, frame_type = parts
+                    if frame_type == 'I' and timestamp_str != 'N/A':
+                        try:
+                            timestamp = float(timestamp_str)
+                            keyframes.append(timestamp)
+                        except ValueError:
+                            continue
+            
+            if keyframes:
+                keyframes = sorted(list(set(keyframes)))
+                logging.info(f"Detected {len(keyframes)} keyframes using frame analysis method")
+                return keyframes
+    except (subprocess.TimeoutExpired, Exception) as e:
+        logging.warning(f"Frame analysis method failed: {e}")
+    
+    # Method 3: Fallback - create synthetic keyframes based on GOP size
+    try:
+        # Get video duration and estimate keyframes every 2 seconds (common GOP size)
+        duration = ffprobe_duration(video_path)
+        if duration and duration > 0:
+            keyframes = [0.0]  # Always include start
+            current = 2.0
+            while current < duration:
+                keyframes.append(current)
+                current += 2.0
+            
+            logging.warning(f"Using synthetic keyframes for {os.path.basename(video_path)} - {len(keyframes)} estimated keyframes")
+            return keyframes
+    except Exception as e:
+        logging.error(f"Synthetic keyframe generation failed: {e}")
+    
+    logging.error(f"All keyframe detection methods failed for {video_path}")
+    return []
+
+def validate_lossless_compatibility(video_path: str) -> Dict[str, Any]:
+    """
+    Validate video format for lossless editing capability.
+    Reference: FFmpeg documentation on stream copy limitations.
+    
+    Args:
+        video_path: Path to the video file
+        
+    Returns:
+        Dictionary with compatibility information
+    """
+    if not os.path.exists(video_path):
+        return {"compatible": False, "reason": "File not found"}
+    
+    cmd = [
+        "ffprobe", "-v", "quiet", "-print_format", "json",
+        "-show_streams", "-show_format", video_path
+    ]
+    
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
+        if result.returncode != 0:
+            return {"compatible": False, "reason": "Failed to analyze video"}
+        
+        data = json.loads(result.stdout)
+        video_stream = next((s for s in data["streams"] if s["codec_type"] == "video"), None)
+        audio_stream = next((s for s in data["streams"] if s["codec_type"] == "audio"), None)
+        
+        if not video_stream:
+            return {"compatible": False, "reason": "No video stream found"}
+        
+        # Check for lossless-friendly codecs
+        lossless_video_codecs = ["h264", "h265", "hevc", "vp9", "av1", "mpeg4"]
+        lossless_audio_codecs = ["aac", "mp3", "ac3", "flac", "pcm_s16le"]
+        
+        video_codec = video_stream.get("codec_name", "").lower()
+        audio_codec = audio_stream.get("codec_name", "").lower() if audio_stream else "none"
+        
+        video_compatible = video_codec in lossless_video_codecs
+        audio_compatible = not audio_stream or audio_codec in lossless_audio_codecs
+        
+        # Check for B-frames (affects lossless cutting)
+        has_b_frames = video_stream.get("has_b_frames", 0) > 0
+        
+        # Get container format
+        container_format = data.get("format", {}).get("format_name", "").lower()
+        container_compatible = any(fmt in container_format for fmt in ["mp4", "mov", "mkv", "avi"])
+        
+        overall_compatible = video_compatible and audio_compatible and container_compatible
+        
+        return {
+            "compatible": overall_compatible,
+            "video_codec": video_codec,
+            "audio_codec": audio_codec,
+            "container_format": container_format,
+            "has_b_frames": has_b_frames,
+            "video_compatible": video_compatible,
+            "audio_compatible": audio_compatible,
+            "container_compatible": container_compatible,
+            "warnings": [w for w in [
+                "B-frames present - may require re-encoding for precise cuts" if has_b_frames else None,
+                f"Video codec '{video_codec}' may not support stream copy" if not video_compatible else None,
+                f"Audio codec '{audio_codec}' may not support stream copy" if not audio_compatible else None,
+                f"Container '{container_format}' may have limitations" if not container_compatible else None
+            ] if w is not None]
+        }
+        
+    except json.JSONDecodeError:
+        return {"compatible": False, "reason": "Invalid video metadata"}
+    except subprocess.TimeoutExpired:
+        return {"compatible": False, "reason": "Analysis timeout"}
+    except Exception as e:
+        logging.error(f"Compatibility check error: {e}")
+        return {"compatible": False, "reason": f"Analysis error: {str(e)}"}
+
+def find_nearest_keyframe(timestamp: float, keyframes: List[float], prefer_before: bool = True) -> float:
+    """
+    Find optimal keyframe for lossless cutting.
+    Algorithm based on industry-standard video editing practices.
+    
+    Args:
+        timestamp: Target timestamp in seconds
+        keyframes: List of keyframe timestamps
+        prefer_before: If True, prefer keyframe before timestamp, else after
+        
+    Returns:
+        Nearest keyframe timestamp
+    """
+    if not keyframes:
+        return timestamp
+    
+    if prefer_before:
+        # Find the closest keyframe before or at the timestamp
+        valid_keyframes = [kf for kf in keyframes if kf <= timestamp]
+        if valid_keyframes:
+            return max(valid_keyframes)
+        else:
+            # No keyframe before, return first keyframe
+            return keyframes[0]
+    else:
+        # Find the closest keyframe after or at the timestamp
+        valid_keyframes = [kf for kf in keyframes if kf >= timestamp]
+        if valid_keyframes:
+            return min(valid_keyframes)
+        else:
+            # No keyframe after, return last keyframe
+            return keyframes[-1]

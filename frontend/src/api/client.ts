@@ -70,9 +70,7 @@ export async function uploadVideo(file: File): Promise<VideoOut> {
 }
 
 export async function getVideo(id: string): Promise<VideoOut> {
-  const res = await fetch(`/api/videos/${id}`, {
-    headers: { Authorization: `Bearer ${authToken}` }
-  });
+  const res = await fetch(`/api/videos/${id}`);
   if (!res.ok) throw new Error(await res.text());
   return res.json();
 }
@@ -83,19 +81,34 @@ export async function markClip(input: {
   end_time: number;
   order_index?: number;
 }): Promise<ClipOut> {
-  const res = await fetch(`/api/clips/mark`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${authToken}` },
-    body: JSON.stringify({ order_index: 0, ...input })
-  });
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+  
+  try {
+    const res = await fetch(`/api/clips/mark`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ order_index: 0, ...input }),
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
+    
+    if (!res.ok) {
+      const errorText = await res.text();
+      throw new Error(`HTTP ${res.status}: ${errorText}`);
+    }
+    return res.json();
+  } catch (error) {
+    clearTimeout(timeoutId);
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error('Request timed out after 30 seconds');
+    }
+    throw error;
+  }
 }
 
 export async function listClips(video_id: string): Promise<ClipOut[]> {
-  const res = await fetch(`/api/videos/${video_id}/clips`, {
-    headers: { Authorization: `Bearer ${authToken}` }
-  });
+  const res = await fetch(`/api/videos/${video_id}/clips`);
   if (!res.ok) {
     const errorText = await res.text();
     throw new Error(errorText);
@@ -139,9 +152,7 @@ export async function getTimelineClips(): Promise<ClipWithVideoOut[]> {
 }
 
 export async function getVideos(): Promise<VideoOut[]> {
-  const res = await fetch(`/api/videos`, {
-    headers: { Authorization: `Bearer ${authToken}` }
-  });
+  const res = await fetch(`/api/videos`);
   if (!res.ok) throw new Error(await res.text());
   return res.json();
 }

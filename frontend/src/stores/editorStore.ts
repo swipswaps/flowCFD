@@ -45,7 +45,13 @@ export const useEditorStore = create<EditorState>()(
       setMarkedIn: (time) => set({ markedIn: time }),
       setMarkedOut: (time) => set({ markedOut: time }),
       setSelectedClipId: (id) => set({ selectedClipId: id }),
-      setActiveVideoId: (id) => set({ activeVideoId: id }),
+      setActiveVideoId: (id) => set({ 
+        activeVideoId: id, 
+        // Clear clip mode when switching videos to prevent restrictions on new videos
+        clipStartTime: null, 
+        clipEndTime: null, 
+        isClipMode: false 
+      }),
       setClipMode: (start, end) => set({ clipStartTime: start, clipEndTime: end, isClipMode: true }),
       clearClipMode: () => set({ clipStartTime: null, clipEndTime: null, isClipMode: false }),
       clearMarks: () => set({ markedIn: null, markedOut: null }),
@@ -58,6 +64,8 @@ export const useEditorStore = create<EditorState>()(
         markedOut: state.markedOut,
         selectedClipId: state.selectedClipId,
         playerDuration: state.playerDuration,
+        // Explicitly exclude clip mode states from persistence
+        // clipStartTime, clipEndTime, isClipMode should NOT persist
       }),
     }
   )

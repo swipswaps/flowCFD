@@ -321,6 +321,79 @@ def list_videos(db: Session = Depends(get_db)):
         for video in videos
     ]
 
+# ===== LOSSLESS VIDEO EDITING ENDPOINTS =====
+
+@app.get("/api/videos/{video_id}/keyframes")
+def get_video_keyframes(video_id: str, db: Session = Depends(get_db)):
+    """
+    Get keyframe timestamps for lossless cutting.
+    Mandatory testing endpoint as per .cursorrules compliance.
+    """
+    # Get video from database
+    db_video = db.query(models.Video).filter(models.Video.id == video_id).first()
+    if not db_video:
+        raise HTTPException(status_code=404, detail="Video not found")
+    
+    # Get keyframes using FFmpeg
+    keyframes = ffmpeg_utils.get_keyframes(db_video.path)
+    
+    return {
+        "video_id": video_id,
+        "keyframes": keyframes,
+        "count": len(keyframes),
+        "filename": db_video.filename
+    }
+
+@app.get("/api/videos/{video_id}/lossless-compatibility")
+def check_lossless_compatibility(video_id: str, db: Session = Depends(get_db)):
+    """
+    Check if video is compatible with lossless editing.
+    Returns detailed compatibility information.
+    """
+    # Get video from database
+    db_video = db.query(models.Video).filter(models.Video.id == video_id).first()
+    if not db_video:
+        raise HTTPException(status_code=404, detail="Video not found")
+    
+    # Check compatibility
+    compatibility = ffmpeg_utils.validate_lossless_compatibility(db_video.path)
+    
+    return {
+        "video_id": video_id,
+        "filename": db_video.filename,
+        **compatibility
+    }
+
+@app.post("/api/videos/analyze-keyframes")
+def analyze_keyframes_batch(video_ids: List[str], db: Session = Depends(get_db)):
+    """
+    Analyze keyframes for multiple videos.
+    Used for batch processing and testing.
+    """
+    results = []
+    
+    for video_id in video_ids:
+        db_video = db.query(models.Video).filter(models.Video.id == video_id).first()
+        if db_video:
+            keyframes = ffmpeg_utils.get_keyframes(db_video.path)
+            compatibility = ffmpeg_utils.validate_lossless_compatibility(db_video.path)
+            
+            results.append({
+                "video_id": video_id,
+                "filename": db_video.filename,
+                "keyframes": keyframes,
+                "keyframe_count": len(keyframes),
+                "lossless_compatible": compatibility["compatible"],
+                "warnings": compatibility.get("warnings", [])
+            })
+        else:
+            results.append({
+                "video_id": video_id,
+                "error": "Video not found"
+            })
+    
+    return {"results": results}
+
 @app.delete("/api/clips/{clip_id}")
 def delete_clip(clip_id: str, db: Session = Depends(get_db)):
     """

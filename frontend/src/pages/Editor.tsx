@@ -90,6 +90,10 @@ export default function Editor() {
     onError: (error) => {
       toast.dismiss();
       toast.error(`Failed to add clip: ${error.message}`);
+    },
+    onSettled: () => {
+      // Always dismiss loading toast regardless of success/error
+      toast.dismiss();
     }
   });
 
