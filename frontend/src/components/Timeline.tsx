@@ -153,17 +153,22 @@ export default function Timeline({ clips, videoDuration, activeVideo }: Timeline
     // Calculate the frame index for the clip's start time on the strip
     const frameIndex = Math.floor(clip.start_time / THUMBNAIL_FRAME_INTERVAL);
     
-    // Estimate width of a single frame in the strip based on strip height (e.g., 16:9 aspect)
-    // This assumes the strip was generated with frames of THUMBNAIL_STRIP_HEIGHT
-    const estimatedFrameWidth = THUMBNAIL_STRIP_HEIGHT * (16 / 9); // Assuming 16:9 aspect ratio for frames
+    // Calculate number of frames in the strip and frame width
+    const totalFrames = Math.ceil(activeVideo.duration / THUMBNAIL_FRAME_INTERVAL);
+    
+    // The strip is scaled to fit the timeline height, so we need to calculate the actual frame width
+    // based on the strip's aspect ratio and the timeline height
+    const stripAspectRatio = totalFrames * (16 / 9); // Assume 16:9 frames
+    const stripDisplayWidth = THUMBNAIL_STRIP_HEIGHT * stripAspectRatio;
+    const frameWidth = stripDisplayWidth / totalFrames;
     
     // Calculate background-position-x to "scroll" the strip to the correct frame
-    const backgroundPositionX = -(frameIndex * estimatedFrameWidth);
+    const backgroundPositionX = -(frameIndex * frameWidth);
 
     return {
       backgroundImage: `url(${activeVideo.thumbnail_strip_url})`,
       backgroundSize: 'auto 100%', // Scale height to fit, width auto (to maintain aspect ratio of the strip)
-      backgroundPositionX: `${backgroundPositionX}px`, // Use pixels for precise positioning
+      backgroundPosition: `${backgroundPositionX}px center`, // Use pixels for precise positioning
       backgroundRepeat: 'no-repeat',
       filter: 'brightness(0.7)', // Slightly dim thumbnail to make text readable
       transition: 'transform 0.1s ease-out, filter 0.1s ease-out, z-index 0.1s', // Smooth transition for hover
@@ -260,7 +265,7 @@ export default function Timeline({ clips, videoDuration, activeVideo }: Timeline
 
       {activeVideo && selectedClipId && (
         <div style={{ background: "#333", padding: "16px", borderRadius: "8px", marginTop: "16px" }}>
-          <h3>Selected Clip: {timelineClips.find(c => c.id === selectedClipId)?.title || `Clip ${timelineClips.findIndex(c => c.id === selectedClipId) + 1}`}</h3>
+          <h3>Selected Clip: {`Clip ${timelineClips.findIndex(c => c.id === selectedClipId) + 1}`}</h3>
           {timelineClips.find(c => c.id === selectedClipId) && (
             <>
               <div style={{ display: "flex", gap: "8px", marginBottom: "8px" }}>

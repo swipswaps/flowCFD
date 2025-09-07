@@ -218,7 +218,7 @@ export default function Editor() {
       toast.error("No clips defined. Add clips and build the project before exporting.");
       return;
     }
-    startExportMutation.mutate({ video_id: activeVideoId });
+    startExportMutation.mutate(activeVideoId);
   };
 
 
