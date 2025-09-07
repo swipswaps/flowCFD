@@ -420,7 +420,7 @@ def build_project(video_id: str = Query(...), db: Session = Depends(get_db)):
     """
     Build project endpoint - temporarily disabled (missing OpenShot integration)
     """
-    raise HTTPException(status_code=501, detail="Project building temporarily disabled - OpenShot integration required")
+    raise HTTPException(status_code=501, detail="Project building is not yet implemented. This feature would require OpenShot integration or custom video processing logic.")
 
 @app.post("/api/exports/start", response_model=schemas.ExportOut)
 def start_export(

@@ -9,6 +9,9 @@ interface EditorState {
   markedOut: number | null;
   selectedClipId: string | null;
   activeVideoId: string | null;
+  clipStartTime: number | null;
+  clipEndTime: number | null;
+  isClipMode: boolean;
 
   setPlayerCurrentTime: (time: number) => void;
   setPlayerDuration: (duration: number) => void;
@@ -17,6 +20,8 @@ interface EditorState {
   setMarkedOut: (time: number | null) => void;
   setSelectedClipId: (id: string | null) => void;
   setActiveVideoId: (id: string | null) => void;
+  setClipMode: (start: number | null, end: number | null) => void;
+  clearClipMode: () => void;
   clearMarks: () => void;
 }
 
@@ -30,6 +35,9 @@ export const useEditorStore = create<EditorState>()(
       markedOut: null,
       selectedClipId: null,
       activeVideoId: null,
+      clipStartTime: null,
+      clipEndTime: null,
+      isClipMode: false,
 
       setPlayerCurrentTime: (time) => set({ playerCurrentTime: time }),
       setPlayerDuration: (duration) => set({ playerDuration: duration }),
@@ -38,6 +46,8 @@ export const useEditorStore = create<EditorState>()(
       setMarkedOut: (time) => set({ markedOut: time }),
       setSelectedClipId: (id) => set({ selectedClipId: id }),
       setActiveVideoId: (id) => set({ activeVideoId: id }),
+      setClipMode: (start, end) => set({ clipStartTime: start, clipEndTime: end, isClipMode: true }),
+      clearClipMode: () => set({ clipStartTime: null, clipEndTime: null, isClipMode: false }),
       clearMarks: () => set({ markedIn: null, markedOut: null }),
     }),
     {

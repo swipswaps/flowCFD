@@ -28,7 +28,12 @@ export default function Editor() {
     setMarkedIn,
     setMarkedOut,
     clearMarks,
-    setIsPlaying
+    setIsPlaying,
+    clipStartTime,
+    clipEndTime,
+    isClipMode,
+    setClipMode,
+    clearClipMode
   } = useEditorStore();
 
   const { data: activeVideo, isLoading: isLoadingVideo } = useQuery<VideoOut>({
@@ -225,18 +230,19 @@ export default function Editor() {
     });
   };
 
-  // NEW: Handle clip playback from timeline
+  // Handle clip playback from timeline - loads clip segment only
   const handleClipPlay = useCallback((clip: ClipWithVideoOut) => {
     // Switch to the clip's video
     setActiveVideoId(clip.video.id);
     
-    // Set player to clip range and start playing
-    setPlayerCurrentTime(clip.start_time);
+    // Enable clip mode with clip boundaries
+    setClipMode(clip.start_time, clip.end_time);
+    
+    // Start playing the clip
     setIsPlaying(true);
     
-    // TODO: Add clip end-time handling to stop at clip.end_time
     console.log(`Playing clip from ${clip.video.filename}: ${clip.start_time}s - ${clip.end_time}s`);
-  }, [setActiveVideoId, setPlayerCurrentTime, setIsPlaying]);
+  }, [setActiveVideoId, setClipMode, setIsPlaying]);
 
   const handleBuildProject = () => {
     if (!activeVideoId) {
@@ -281,45 +287,17 @@ export default function Editor() {
       <h1>🎬 Video Timeline Editor</h1>
 
       <section className="editor-section">
-        <h2>📁 Media Library</h2>
+        <h2>📁 Upload Video</h2>
         <input type="file" accept="video/*" onChange={handleFileUpload} disabled={upload.isPending} />
         {upload.isPending && <p>Uploading...</p>}
         
-        {/* NEW: Video Selection */}
-        {videos.length > 0 && (
-          <div className="video-selection">
-            <h3>Available Videos:</h3>
-            <div className="video-list">
-              {videos.map((video) => (
-                <div 
-                  key={video.id} 
-                  className={`video-item ${activeVideoId === video.id ? 'active' : ''}`}
-                  onClick={() => setActiveVideoId(video.id)}
-                >
-                  {video.thumbnail_url && (
-                    <img src={video.thumbnail_url} alt="Video Thumbnail" />
-                  )}
-                  <div className="video-info">
-                    <p><b>{video.filename}</b></p>
-                    <p>Duration: {formatTime(video.duration ?? 0)}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-        
         {activeVideo && (
           <div className="active-video-info">
-            <h3>Current Video for Marking:</h3>
+            <h3>Current Video:</h3>
             <div className="upload-info">
-              {activeVideo.thumbnail_url && (
-                  <img src={activeVideo.thumbnail_url} alt="Video Thumbnail" />
-              )}
               <div className="upload-info-meta">
                   <p><b>{activeVideo.filename}</b></p>
                   <p>Duration: {formatTime(activeVideo.duration || 0)}</p>
-                  <p className="video-id">ID: {activeVideo.id}</p>
               </div>
             </div>
           </div>
@@ -331,10 +309,37 @@ export default function Editor() {
         {isLoadingVideo ? (
           <div>Loading video...</div>
         ) : activeVideo ? (
-          <VideoPlayer videoUrl={activeVideo.url ?? ""} videoDuration={activeVideo.duration ?? 0} />
+          <VideoPlayer 
+            videoUrl={activeVideo.url ?? ""} 
+            videoDuration={activeVideo.duration ?? 0}
+            clipStartTime={isClipMode ? clipStartTime ?? undefined : undefined}
+            clipEndTime={isClipMode ? clipEndTime ?? undefined : undefined}
+          />
         ) : (
           <div className="no-video-message">
             <p>👈 Select a video from the library above to start editing</p>
+          </div>
+        )}
+        
+        {isClipMode && (
+          <div className="clip-mode-indicator" style={{ 
+            backgroundColor: "#2563eb", 
+            color: "white", 
+            padding: "0.5rem", 
+            borderRadius: "0.5rem", 
+            marginBottom: "1rem",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center"
+          }}>
+            <span>🎬 Clip Mode: {formatTime(clipStartTime ?? 0)} - {formatTime(clipEndTime ?? 0)}</span>
+            <button 
+              onClick={clearClipMode}
+              className="btn"
+              style={{ backgroundColor: "white", color: "#2563eb" }}
+            >
+              ↩️ Exit Clip Mode
+            </button>
           </div>
         )}
         

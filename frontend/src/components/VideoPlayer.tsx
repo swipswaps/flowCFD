@@ -7,9 +7,11 @@ import { formatTime } from "../utils/time";
 interface VideoPlayerProps {
   videoUrl: string;
   videoDuration: number;
+  clipStartTime?: number;
+  clipEndTime?: number;
 }
 
-export default function VideoPlayer({ videoUrl, videoDuration }: VideoPlayerProps) {
+export default function VideoPlayer({ videoUrl, videoDuration, clipStartTime, clipEndTime }: VideoPlayerProps) {
   const playerRef = useRef<ReactPlayer>(null);
   const {
     playerCurrentTime,
@@ -28,9 +30,25 @@ export default function VideoPlayer({ videoUrl, videoDuration }: VideoPlayerProp
     console.log("VideoPlayer: videoUrl received:", videoUrl);
   }, [videoUrl]);
 
+  // Seek to clip start time when clip changes
+  useEffect(() => {
+    if (clipStartTime !== undefined && playerRef.current) {
+      playerRef.current.seekTo(clipStartTime, 'seconds');
+      setPlayerCurrentTime(clipStartTime);
+    }
+  }, [clipStartTime, setPlayerCurrentTime]);
+
   const handleProgress = useCallback((state: { playedSeconds: number }) => {
     setPlayerCurrentTime(state.playedSeconds);
-  }, [setPlayerCurrentTime]);
+    
+    // Stop playback if we've reached the end of a clip
+    if (clipEndTime && state.playedSeconds >= clipEndTime) {
+      setIsPlaying(false);
+      if (playerRef.current) {
+        playerRef.current.seekTo(clipEndTime, 'seconds');
+      }
+    }
+  }, [setPlayerCurrentTime, clipEndTime, setIsPlaying]);
 
   const handleDuration = useCallback((duration: number) => {
     setPlayerDuration(duration);
@@ -133,6 +151,84 @@ export default function VideoPlayer({ videoUrl, videoDuration }: VideoPlayerProp
           </div>
         )}
       </div>
+
+      {/* Trim Markers Timeline */}
+      {videoUrl && videoDuration > 0 && (
+        <div style={{ marginTop: "8px", position: "relative", height: "20px", backgroundColor: "#333", borderRadius: "4px" }}>
+          {/* Progress Bar */}
+          <div 
+            style={{ 
+              position: "absolute", 
+              top: 0, 
+              left: 0, 
+              height: "100%", 
+              backgroundColor: "#666", 
+              width: `${(playerCurrentTime / videoDuration) * 100}%`,
+              borderRadius: "4px 0 0 4px"
+            }} 
+          />
+          
+          {/* Clip boundaries (if in clip mode) */}
+          {clipStartTime !== undefined && clipEndTime !== undefined && (
+            <div 
+              style={{
+                position: "absolute",
+                top: 0,
+                left: `${(clipStartTime / videoDuration) * 100}%`,
+                width: `${((clipEndTime - clipStartTime) / videoDuration) * 100}%`,
+                height: "100%",
+                backgroundColor: "rgba(59, 130, 246, 0.3)",
+                border: "2px solid #3b82f6",
+                borderRadius: "4px"
+              }}
+            />
+          )}
+          
+          {/* IN marker */}
+          {markedIn !== null && (
+            <div 
+              style={{ 
+                position: "absolute", 
+                top: "-2px", 
+                left: `${(markedIn / videoDuration) * 100}%`, 
+                width: "2px", 
+                height: "24px", 
+                backgroundColor: "#10b981", 
+                transform: "translateX(-1px)"
+              }} 
+            />
+          )}
+          
+          {/* OUT marker */}
+          {markedOut !== null && (
+            <div 
+              style={{ 
+                position: "absolute", 
+                top: "-2px", 
+                left: `${(markedOut / videoDuration) * 100}%`, 
+                width: "2px", 
+                height: "24px", 
+                backgroundColor: "#ef4444", 
+                transform: "translateX(-1px)"
+              }} 
+            />
+          )}
+          
+          {/* Current time indicator */}
+          <div 
+            style={{ 
+              position: "absolute", 
+              top: "-4px", 
+              left: `${(playerCurrentTime / videoDuration) * 100}%`, 
+              width: "2px", 
+              height: "28px", 
+              backgroundColor: "#ffffff", 
+              transform: "translateX(-1px)",
+              boxShadow: "0 0 4px rgba(0,0,0,0.5)"
+            }} 
+          />
+        </div>
+      )}
 
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "8px", padding: "8px 0" }}>
         <span>Current: {formatTime(playerCurrentTime)} / Duration: {formatTime(videoDuration)}</span>
