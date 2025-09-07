@@ -168,10 +168,18 @@ export default function Timeline({ clips, videoDuration, activeVideo }: Timeline
     // Debug logging (remove in production)
     console.log(`Clip ${clip.id}: start=${clip.start_time}, end=${clip.end_time}, midpoint=${clipMidpoint}, frameIndex=${frameIndex}, bgPos=${backgroundPositionX}`);
 
+    // The thumbnail should show only the content of this specific clip
+    // Calculate what portion of the total strip this clip represents
+    const clipDuration = clip.end_time - clip.start_time;
+    const clipStartPercent = (clip.start_time / activeVideo.duration) * 100;
+    const clipLengthPercent = (clipDuration / activeVideo.duration) * 100;
+
     return {
       backgroundImage: `url(${activeVideo.thumbnail_strip_url})`,
-      backgroundSize: 'contain', // Scale to fit while maintaining aspect ratio
-      backgroundPosition: `${backgroundPositionX}px center`, // Use pixels for precise positioning
+      // Scale the strip so that the clip's portion fills the entire thumbnail area
+      backgroundSize: `${(activeVideo.duration / clipDuration) * 100}% 100%`,
+      // Position to show the specific segment of the video for this clip
+      backgroundPosition: `${-clipStartPercent * (activeVideo.duration / clipDuration)}% center`,
       backgroundRepeat: 'no-repeat',
       filter: 'brightness(0.7)', // Slightly dim thumbnail to make text readable
       transition: 'transform 0.1s ease-out, filter 0.1s ease-out, z-index 0.1s', // Smooth transition for hover

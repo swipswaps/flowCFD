@@ -104,9 +104,9 @@ async def upload_video(file: UploadFile, db: Session = Depends(get_db)):
     db_video = models.Video(
         id=video_id,
         filename=file.filename,
+        path=file_path,
         duration=duration,
-        url=get_static_url(file_path),
-        thumbnail_strip_url=None  # Will be set by background task
+        thumbnail_strip_url=""  # Empty string instead of None for now
     )
     db.add(db_video)
     db.commit()
@@ -121,6 +121,7 @@ def get_video(video_id: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Video not found")
     
     video_out = schemas.VideoOut.from_orm(db_video)
+    video_out.url = get_static_url(db_video.path)
     return video_out
 
 @app.post("/api/clips/mark", response_model=schemas.ClipOut)
