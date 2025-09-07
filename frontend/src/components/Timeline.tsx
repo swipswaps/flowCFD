@@ -211,14 +211,11 @@ export default function Timeline({ clips, videoDuration, activeVideo, isGlobalTi
 
   return (
     <div style={{ marginTop: "24px", width: "100%", maxWidth: "1000px", margin: "0 auto" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
-        <h2>🎞️ Timeline</h2>
-        {isGlobalTimeline && timelineClips.length > 0 && (
-          <div style={{ fontSize: "14px", color: "#bbb" }}>
-            💡 Click clips to play them | {timelineClips.length} clips from {new Set(timelineClips.map(c => 'video' in c ? c.video.id : 'unknown')).size} videos
-          </div>
-        )}
-      </div>
+      {isGlobalTimeline && timelineClips.length > 0 && (
+        <div style={{ fontSize: "14px", color: "#bbb", marginBottom: "12px" }}>
+          💡 Click clips to play them | {timelineClips.length} clips from {new Set(timelineClips.map(c => 'video' in c ? c.video.id : 'unknown')).size} videos
+        </div>
+      )}
       <div
         ref={timelineRef}
         style={{

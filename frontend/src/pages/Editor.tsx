@@ -4,8 +4,7 @@ import toast from "react-hot-toast";
 import {
   uploadVideo, getVideo, VideoOut,
   markClip, listClips, ClipOut,
-  buildProject, startExport, getExportStatus, openExportWebSocket,
-  getLatestActiveExport, // NEW
+  buildProject,
   getTimelineClips, getVideos, ClipWithVideoOut, // NEW: Multi-video timeline
   clearTimeline // NEW: Clear timeline function
 } from "../api/client";
@@ -54,8 +53,6 @@ export default function Editor() {
     queryFn: getVideos,
   });
 
-  const [exportId, setExportId] = React.useState<string | null>(null);
-  const [exportStatus, setExportStatus] = React.useState<{progress:number; status:string; download_url?:string|null; error_message?:string|null; estimated_time_remaining_seconds?:number|null}>({progress:0,status:"idle"});
 
   // --- Mutations ---
   const upload = useMutation({
@@ -70,8 +67,6 @@ export default function Editor() {
       setActiveVideoId(v.id);
       qc.invalidateQueries({ queryKey: ["videos"] });
       qc.invalidateQueries({ queryKey: ["video", v.id] });
-      setExportId(null);
-      setExportStatus({progress:0, status:"idle"});
       clearMarks();
       setIsPlaying(false);
     },
@@ -124,76 +119,6 @@ export default function Editor() {
     }
   });
 
-  // NEW: Effect to check for and resume monitoring an active export on video load
-  useEffect(() => {
-    if (activeVideoId && !exportId) { // Only check if no export is currently being monitored
-      // Reset status for new video
-      setExportStatus({progress: 0, status: "idle"});
-
-      (async () => {
-        try {
-          const activeExportResponse = await getLatestActiveExport(activeVideoId);
-          if (activeExportResponse && (activeExportResponse.status === "queued" || activeExportResponse.status === "processing")) {
-            toast.success("Resumed monitoring an in-progress export.");
-            setExportId(activeExportResponse.id);
-            monitorExport(activeExportResponse.id);
-          }
-        } catch (error) {
-          console.error("Error checking for active exports:", error);
-          // Don't show toast for initial check failures to avoid spam
-        }
-      })();
-    }
-  }, [activeVideoId, exportId]);
-
-  // NEW: Extracted monitoring logic to be reusable
-  const monitorExport = (currentExportId: string) => {
-    const ws = openExportWebSocket(currentExportId, (s) => setExportStatus({
-      progress: s.progress, status: s.status, download_url: s.download_url, error_message: s.error_message,
-      estimated_time_remaining_seconds: s.estimated_time_remaining_seconds
-    }));
-
-    const timer = setInterval(async () => {
-      try {
-        const s = await getExportStatus(currentExportId);
-        setExportStatus({
-          progress: s.progress, status: s.status, download_url: s.download_url, error_message: s.error_message,
-          estimated_time_remaining_seconds: s.estimated_time_remaining_seconds
-        });
-        if (s.status === "completed" || s.status === "error") {
-          clearInterval(timer);
-          ws.close();
-          if (s.status === "completed") toast.success("Export completed!");
-          else if (s.status === "error") toast.error(`Export failed: ${s.error_message || "Unknown error"}`);
-        }
-      } catch (e) {
-        console.error("Polling error:", e);
-        clearInterval(timer);
-        ws.close();
-        toast.error("Export polling failed. Check server logs.");
-      }
-    }, 3000);
-
-    return () => { try { ws.close(); } catch {} clearInterval(timer); };
-  };
-
-  // --- Mutations (showing startExportMutation with new logic) ---
-  const startExportMutation = useMutation({
-    mutationFn: startExport,
-    onMutate: () => {
-      toast.loading("Starting export...");
-    },
-    onSuccess: (exp) => {
-      toast.dismiss();
-      toast.success("Export started!");
-      setExportId(exp.id);
-      monitorExport(exp.id); // Use the reusable monitoring function
-    },
-    onError: (error) => {
-      toast.dismiss();
-      toast.error(`Failed to start export: ${error.message}`);
-    }
-  });
 
   const clearTimelineMutation = useMutation({
     mutationFn: clearTimeline,
@@ -267,31 +192,6 @@ export default function Editor() {
     buildProjectMutation.mutate(activeVideoId);
   };
 
-  const handleStartExport = () => {
-    if (!activeVideoId) {
-      toast.error("Please upload a video first.");
-      return;
-    }
-    if (timelineClips.length === 0) {
-      toast.error("No clips defined. Add clips and build the project before exporting.");
-      return;
-    }
-    startExportMutation.mutate(activeVideoId);
-  };
-
-
-  // NEW: Helper for dynamic class names on the progress bar
-  const progressBarClasses = `progress-bar-fill status-${exportStatus.status}`;
-
-  const formatEta = (seconds: number | null | undefined): string => {
-    if (seconds === null || seconds === undefined || isNaN(seconds) || seconds < 0) {
-      return "N/A";
-    }
-    if (seconds < 60) return `${Math.ceil(seconds)}s`;
-    const minutes = Math.floor(seconds / 60);
-    const remainingSeconds = Math.ceil(seconds % 60);
-    return `${minutes}m ${remainingSeconds}s`;
-  };
 
   return (
     <div className="editor-container">
@@ -353,9 +253,9 @@ export default function Editor() {
             </button>
           </div>
         )}
-        
+
         {activeVideo && (
-          <div className="marking-controls">
+          <div className="marking-controls" style={{ marginTop: "2rem" }}>
               <button 
                   onClick={() => setMarkedIn(playerCurrentTime)}
                   className="btn"
@@ -371,6 +271,20 @@ export default function Editor() {
                   📍 Mark OUT ({markedOut !== null ? formatTime(markedOut) : "--:--"})
               </button>
               <button 
+                  onClick={clearMarks}
+                  className="btn"
+                  disabled={!activeVideo}
+              >
+                  🗑️ Clear Marks
+              </button>
+              <button 
+                  onClick={() => clearTimelineMutation.mutate()}
+                  className="btn btn-danger"
+                  disabled={clearTimelineMutation.isPending || (timelineClips?.length || 0) === 0}
+              >
+                  {clearTimelineMutation.isPending ? "Clearing..." : "Clear Timeline"}
+              </button>
+              <button 
                   onClick={handleAddClip} 
                   className="btn"
                   disabled={!activeVideoId || markedIn === null || markedOut === null || markedOut <= markedIn || (activeVideo && markedOut > activeVideo.duration!) || addClip.isPending}
@@ -383,30 +297,20 @@ export default function Editor() {
               </div>
           </div>
         )}
-      </section>
 
-      <section className="editor-section">
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
-          <h2>🎬 Timeline ({timelineClips?.length || 0} clips)</h2>
-          <button 
-            className="btn btn-danger"
-            onClick={() => clearTimelineMutation.mutate()}
-            disabled={clearTimelineMutation.isPending || (timelineClips?.length || 0) === 0}
-          >
-            {clearTimelineMutation.isPending ? "Clearing..." : "Clear Timeline"}
-          </button>
+        <div style={{ marginTop: "1rem" }}>
+          <Timeline 
+            clips={timelineClips} 
+            videoDuration={activeVideo?.duration || 0} 
+            activeVideo={activeVideo ?? null}
+            isGlobalTimeline={true}
+            onClipPlay={handleClipPlay}
+          />
         </div>
-        <Timeline 
-          clips={timelineClips} 
-          videoDuration={activeVideo?.duration || 0} 
-          activeVideo={activeVideo ?? null}
-          isGlobalTimeline={true}
-          onClipPlay={handleClipPlay}
-        />
       </section>
 
       <section className="editor-section">
-        <h2>🚀 Build & Export</h2>
+        <h2>🚀 Build Timeline Video</h2>
         <div className="export-controls">
             <button
                 onClick={handleBuildProject}
@@ -415,40 +319,7 @@ export default function Editor() {
             >
                 {buildProjectMutation.isPending ? "Building..." : "Build Timeline Video"}
             </button>
-            <button
-                onClick={handleStartExport}
-                className="btn"
-                disabled={!activeVideoId || timelineClips.length === 0 || startExportMutation.isPending}
-            >
-                {startExportMutation.isPending ? "Starting Export..." : "Start Export"}
-            </button>
         </div>
-        
-        {exportId && (
-          <div className="export-status-container">
-            <h3>Export Status: {exportStatus.status}</h3>
-            <div className="progress-bar-container">
-              <div
-                className={progressBarClasses}
-                style={{ width: `${exportStatus.progress}%` }}
-              />
-            </div>
-            <p>Progress: {exportStatus.progress}%</p>
-            {exportStatus.status === "processing" && exportStatus.estimated_time_remaining_seconds !== null && (
-              <p className="eta-display">ETA: {formatEta(exportStatus.estimated_time_remaining_seconds)}</p>
-            )}
-            {exportStatus.error_message && (
-              <p className="error-message">Error: {exportStatus.error_message}</p>
-            )}
-            {exportStatus.download_url && exportStatus.status === "completed" && (
-              <p className="download-link-container">
-                <a href={exportStatus.download_url} download className="download-link">
-                  Download Final MP4
-                </a>
-              </p>
-            )}
-          </div>
-        )}
       </section>
     </div>
   );
