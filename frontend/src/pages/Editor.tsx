@@ -195,28 +195,12 @@ export default function Editor() {
 
   return (
     <div className="editor-container">
-      <h1>🎬 Video Timeline Editor</h1>
-
       <section className="editor-section">
-        <h2>📁 Upload Video</h2>
-        <input type="file" accept="video/*" onChange={handleFileUpload} disabled={upload.isPending} />
-        {upload.isPending && <p>Uploading...</p>}
-        
-        {activeVideo && (
-          <div className="active-video-info">
-            <h3>Current Video:</h3>
-            <div className="upload-info">
-              <div className="upload-info-meta">
-                  <p><b>{activeVideo.filename}</b></p>
-                  <p>Duration: {formatTime(activeVideo.duration || 0)}</p>
-              </div>
-            </div>
-          </div>
-        )}
-      </section>
-
-      <section className="editor-section">
-        <h2>🎬 Video Player & Clip Marking</h2>
+        <div style={{ display: "flex", alignItems: "center", gap: "1rem", marginBottom: "1rem" }}>
+          <span>📁 Upload Video</span>
+          <input type="file" accept="video/*" onChange={handleFileUpload} disabled={upload.isPending} />
+          {upload.isPending && <span>Uploading...</span>}
+        </div>
         {isLoadingVideo ? (
           <div>Loading video...</div>
         ) : activeVideo ? (
@@ -233,24 +217,48 @@ export default function Editor() {
         )}
         
         {isClipMode && (
-          <div className="clip-mode-indicator" style={{ 
-            backgroundColor: "#2563eb", 
+          <div className="clip-preview-banner" style={{ 
+            background: "linear-gradient(135deg, #3b82f6, #1d4ed8)", 
             color: "white", 
-            padding: "0.5rem", 
-            borderRadius: "0.5rem", 
+            padding: "0.75rem 1rem", 
+            borderRadius: "0.75rem", 
             marginBottom: "1rem",
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center"
+            boxShadow: "0 4px 12px rgba(59, 130, 246, 0.3)",
+            border: "1px solid rgba(255, 255, 255, 0.2)"
           }}>
-            <span>🎬 Clip Mode: {formatTime(clipStartTime ?? 0)} - {formatTime(clipEndTime ?? 0)}</span>
-            <button 
-              onClick={clearClipMode}
-              className="btn"
-              style={{ backgroundColor: "white", color: "#2563eb" }}
-            >
-              ↩️ Exit Clip Mode
-            </button>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                <span style={{ fontSize: "1.1rem", fontWeight: "600" }}>🎬 Previewing Clip</span>
+                <span style={{ 
+                  backgroundColor: "rgba(255, 255, 255, 0.2)", 
+                  padding: "0.25rem 0.5rem", 
+                  borderRadius: "0.25rem",
+                  fontSize: "0.85rem"
+                }}>
+                  {formatTime(clipStartTime ?? 0)} → {formatTime(clipEndTime ?? 0)} 
+                  ({formatTime((clipEndTime ?? 0) - (clipStartTime ?? 0))} long)
+                </span>
+              </div>
+              <div style={{ display: "flex", gap: "0.5rem" }}>
+                <button 
+                  onClick={clearClipMode}
+                  className="btn"
+                  style={{ 
+                    backgroundColor: "rgba(255, 255, 255, 0.9)", 
+                    color: "#1d4ed8",
+                    border: "none",
+                    padding: "0.5rem 1rem",
+                    fontSize: "0.9rem",
+                    fontWeight: "500"
+                  }}
+                >
+                  📺 Play Full Video
+                </button>
+              </div>
+            </div>
+            <div style={{ fontSize: "0.9rem", opacity: "0.9" }}>
+              💡 Video playback is limited to this clip. Click "Play Full Video" to see the entire video.
+            </div>
           </div>
         )}
 
@@ -292,7 +300,7 @@ export default function Editor() {
                   {addClip.isPending ? "Adding..." : "➕ Add to Timeline"}
               </button>
               <div className="marks-display">
-                Current: {formatTime(playerCurrentTime)} | 
+                {activeVideo?.filename} {formatTime(playerCurrentTime)} | 
                 Range: {markedIn !== null ? formatTime(markedIn) : "--:--"} to {markedOut !== null ? formatTime(markedOut) : "--:--"}
               </div>
           </div>
@@ -310,14 +318,13 @@ export default function Editor() {
       </section>
 
       <section className="editor-section">
-        <h2>🚀 Build Timeline Video</h2>
         <div className="export-controls">
             <button
                 onClick={handleBuildProject}
                 className="btn"
                 disabled={!activeVideoId || timelineClips.length === 0 || buildProjectMutation.isPending}
             >
-                {buildProjectMutation.isPending ? "Building..." : "Build Timeline Video"}
+                {buildProjectMutation.isPending ? "Building..." : "🚀 Build Timeline Video"}
             </button>
         </div>
       </section>

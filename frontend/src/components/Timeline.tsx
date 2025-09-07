@@ -212,8 +212,16 @@ export default function Timeline({ clips, videoDuration, activeVideo, isGlobalTi
   return (
     <div style={{ marginTop: "24px", width: "100%", maxWidth: "1000px", margin: "0 auto" }}>
       {isGlobalTimeline && timelineClips.length > 0 && (
-        <div style={{ fontSize: "14px", color: "#bbb", marginBottom: "12px" }}>
-          💡 Click clips to play them | {timelineClips.length} clips from {new Set(timelineClips.map(c => 'video' in c ? c.video.id : 'unknown')).size} videos
+        <div style={{ 
+          fontSize: "14px", 
+          color: "#10b981", 
+          marginBottom: "12px",
+          backgroundColor: "rgba(16, 185, 129, 0.1)",
+          padding: "0.5rem",
+          borderRadius: "0.5rem",
+          border: "1px solid rgba(16, 185, 129, 0.2)"
+        }}>
+          🎬 Click any clip below to preview it | {timelineClips.length} clips from {new Set(timelineClips.map(c => 'video' in c ? c.video.id : 'unknown')).size} videos
         </div>
       )}
       <div
@@ -263,22 +271,55 @@ export default function Timeline({ clips, videoDuration, activeVideo, isGlobalTi
                 flexShrink: 0,
                 width: `${percentageOfTotal}%`,
                 height: "100%",
-                backgroundColor: isSelected ? "rgba(76, 175, 80, 0.5)" : "rgba(0, 123, 255, 0.5)", // Transparent background to see thumbnail
-                border: isSelected ? "2px solid yellow" : (isHovered ? "1px solid white" : "1px solid #1a1a1a"),
+                backgroundColor: isSelected ? "rgba(59, 130, 246, 0.8)" : (isHovered ? "rgba(59, 130, 246, 0.6)" : "rgba(0, 123, 255, 0.4)"),
+                border: isSelected ? "3px solid #3b82f6" : (isHovered ? "2px solid #60a5fa" : "1px solid #1e293b"),
                 boxSizing: "border-box",
                 display: "flex",
                 flexDirection: "column",
                 justifyContent: "center",
+                cursor: "pointer",
+                transition: "all 0.2s ease",
+                transform: isHovered ? "scale(1.02)" : "scale(1)",
+                boxShadow: isSelected ? "0 4px 12px rgba(59, 130, 246, 0.4)" : (isHovered ? "0 2px 8px rgba(59, 130, 246, 0.3)" : "none"),
                 alignItems: "center",
                 color: "white",
                 fontSize: "12px",
                 fontWeight: "bold",
-                cursor: "pointer",
                 position: "relative",
                 ...getThumbnailClipStyle(clip, isHovered, isSelected)
               }}
-              title={`Clip ${index + 1}: ${formatTime(clip.start_time)} - ${formatTime(clip.end_time)}`}
+              title={`🎬 Click to preview: Clip ${index + 1} (${formatTime(clip.start_time)} - ${formatTime(clip.end_time)})`}
             >
+              {isHovered && (
+                <div style={{
+                  position: "absolute",
+                  top: "-40px",
+                  left: "50%",
+                  transform: "translateX(-50%)",
+                  backgroundColor: "#1f2937",
+                  color: "white",
+                  padding: "0.5rem",
+                  borderRadius: "0.5rem",
+                  fontSize: "0.75rem",
+                  whiteSpace: "nowrap",
+                  zIndex: 10,
+                  boxShadow: "0 4px 12px rgba(0, 0, 0, 0.3)",
+                  border: "1px solid #3b82f6"
+                }}>
+                  🎬 Click to preview this clip
+                  <div style={{
+                    position: "absolute",
+                    bottom: "-6px",
+                    left: "50%",
+                    transform: "translateX(-50%)",
+                    width: 0,
+                    height: 0,
+                    borderLeft: "6px solid transparent",
+                    borderRight: "6px solid transparent",
+                    borderTop: "6px solid #1f2937",
+                  }}></div>
+                </div>
+              )}
               <div style={{ zIndex: 1, textShadow: '1px 1px 2px rgba(0,0,0,0.8)' }}>
                 Clip {index + 1}
                 <div style={{ fontSize: "10px", marginTop: "4px" }}>

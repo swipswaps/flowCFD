@@ -1,144 +1,227 @@
 # flowCFD Video Editor
 
-This project is a modern, web-based video editor inspired by CapCut's simplicity, focusing on rapid clip selection and automated editing workflows. It provides a lightweight, browser-based interface for a professional video editing experience, powered by a Python backend and a React frontend.
+A modern, web-based video editor inspired by CapCut's simplicity, focusing on rapid clip selection and automated editing workflows. It provides a lightweight, browser-based interface for professional video editing, powered by a Python backend with FFmpeg processing and a React frontend.
+
+## Features
+
+- **🎬 Intuitive Clip Preview System**: Click any timeline clip to instantly preview that specific segment
+- **⚡ Fast Video Processing**: Direct FFmpeg integration for efficient clip extraction and concatenation
+- **🎯 Streamlined UI**: Clean interface with smart visual feedback and hover tooltips
+- **📱 Modern Tech Stack**: FastAPI backend, React frontend with TypeScript, and SQLite database
+- **🔄 Real-time Updates**: Live progress feedback and automatic thumbnail generation
+- **💾 Persistent State**: Timeline and clip mode states survive page refreshes
+- **🚀 One-Click Building**: Build and download complete timeline videos instantly
 
 ## How It Works
 
-The application is composed of two main parts: a frontend web interface and a backend processing engine.
+The application consists of a **FastAPI backend** for video processing and a **React frontend** for the user interface, working together to provide a seamless video editing experience.
 
 ### Backend Architecture
 
-The backend is a **FastAPI** application that handles all heavy lifting. Its primary responsibilities are managing project data, processing video files, and communicating progress back to the user.
+The backend handles all video processing, file management, and API operations:
 
-1.  **API Server (`app.py`):** Exposes a RESTful API for all frontend operations. This includes endpoints for uploading videos, defining clips, building projects, and starting exports. It also hosts a WebSocket endpoint for real-time progress updates during video rendering.
-2.  **Configuration (`config.py`):** All configuration, such as database connection strings and CORS origins, is managed via environment variables for security and flexibility, powered by Pydantic's `BaseSettings`.
-3.  **Database (`database.py`, `models.py`):** Uses **SQLAlchemy** to manage a **PostgreSQL** database that stores information about uploaded videos, their associated clips, and export jobs. It is designed for production use.
-4.  **Video Processing (`ffmpeg_utils.py`):** A utility module that wraps the powerful **FFmpeg** command-line tool to perform core tasks like getting video duration, generating thumbnails, and creating thumbnail strips for the UI. It uses secure, temporary directories for intermediate file processing.
-5.  **Project Generation (`create_openshot_project.py`):** When a user wants to combine their clips, the backend uses this script to dynamically generate an **OpenShot** project file (`.osp`). This file is a JSON representation of the timeline.
-6.  **Video Rendering (`direct_render.py`):** To export the final video, the backend uses this script. It reads the `.osp` file, uses FFmpeg to extract each individual clip into a temporary file in a secure location, and then uses FFmpeg's concat feature to stitch them together into the final MP4.
+1. **API Server (`app.py`)**: FastAPI application with RESTful endpoints for video upload, clip management, timeline operations, and project building
+2. **Database (`database.py`, `models.py`)**: SQLite database with SQLAlchemy ORM for storing videos, clips, and project data
+3. **Video Processing (`ffmpeg_utils.py`)**: Direct FFmpeg integration for:
+   - Video duration detection and metadata extraction
+   - Thumbnail generation with smart positioning
+   - Clip-specific thumbnail creation
+   - Timeline video building with encoder fallbacks
+4. **File Management**: Secure handling of uploads, thumbnails, and exports with proper cleanup
 
 ### Frontend Architecture
 
-The frontend is a modern **React** single-page application built with **Vite**. It is designed to be responsive and provide a smooth, resilient user experience.
+The frontend provides an intuitive editing interface with modern web technologies:
 
-1.  **Main View (`Editor.tsx`):** This is the central component where the user interacts with the application. It contains the logic for file uploads, video playback, and communicating with the backend API. It's capable of resuming the monitoring of an in-progress export even after a page refresh.
-2.  **State Management (`stores/editorStore.ts`):** The application uses **Zustand**, a lightweight state management library, to handle global UI state.
-3.  **Server Communication (`api/client.ts`):** All communication with the backend is managed through a dedicated API client, which uses **TanStack React Query** to handle data fetching, caching, and mutations. This makes the UI more resilient and responsive.
-4.  **Components (`components/`):**
-    *   `VideoPlayer.tsx`: A reusable component that wraps `react-player` to provide video playback, seeking, and marking functionality.
-    *   `Timeline.tsx`: Displays the clips that the user has added to the project.
+1. **Main Editor (`Editor.tsx`)**: Central component handling video upload, playback, marking, and timeline management
+2. **Video Player (`VideoPlayer.tsx`)**: Custom player with:
+   - Clip preview mode with restricted playback boundaries
+   - Visual timeline with trim markers and progress indicators
+   - Keyboard shortcuts for efficient editing
+3. **Timeline (`Timeline.tsx`)**: Interactive timeline with:
+   - Click-to-preview functionality for instant clip playback
+   - Drag-and-drop reordering capabilities
+   - Visual feedback with hover effects and selection states
+4. **State Management (`editorStore.ts`)**: Zustand-powered state with persistence for seamless user experience
+5. **API Integration (`client.ts`)**: TanStack React Query for efficient data fetching and caching
 
 ## Project Structure
 
 ```
-.
+flowCFD/
 ├── backend/
-│   ├── app.py              # FastAPI application, API endpoints
-│   ├── database.py         # SQLAlchemy database setup
-│   ├── ffmpeg_utils.py     # FFmpeg helper functions
+│   ├── app.py              # FastAPI application and API endpoints
+│   ├── database.py         # SQLite database setup
 │   ├── models.py           # SQLAlchemy ORM models
+│   ├── schemas.py          # Pydantic request/response schemas
+│   ├── ffmpeg_utils.py     # FFmpeg video processing utilities
 │   ├── requirements.txt    # Python dependencies
-│   ├── run.sh              # Backend start script
-│   └── schemas.py          # Pydantic data schemas
-├── create_openshot_project.py # Script to create OpenShot projects
-├── direct_render.py        # Direct rendering script using FFmpeg
+│   └── store/              # File storage directory
+│       ├── uploads/        # Uploaded video files
+│       ├── thumbnails/     # Generated thumbnails
+│       └── exports/        # Built timeline videos
 ├── frontend/
-│   ├── ... (React project files)
-│   └── src/
-│       ├── api/client.ts   # Frontend API client
-│       ├── pages/Editor.tsx  # Main editor page component
-│       └── stores/editorStore.ts # Zustand global state
-└── ...
+│   ├── src/
+│   │   ├── pages/Editor.tsx       # Main editor interface
+│   │   ├── components/
+│   │   │   ├── VideoPlayer.tsx    # Video player with clip preview
+│   │   │   └── Timeline.tsx       # Interactive timeline component
+│   │   ├── stores/editorStore.ts  # Zustand state management
+│   │   ├── api/client.ts          # API client with React Query
+│   │   └── utils/time.ts          # Time formatting utilities
+│   ├── package.json
+│   └── vite.config.ts
+└── README.md
 ```
 
 ## Getting Started
-
-Follow these instructions to set up and run the project locally.
 
 ### Prerequisites
 
 - **Python 3.10+**
 - **Node.js 16+** and **npm**
-- **FFmpeg**: Must be installed and available in your system's PATH.
-- **PostgreSQL**: A running PostgreSQL server. You will need to create a database (e.g., `flowcfd`) and have the connection URL handy.
+- **FFmpeg**: Must be installed and available in your system PATH
 
 ### Installation & Setup
 
-1.  **Configure the Backend Environment:**
-    *   Navigate to the `backend/` directory.
-    *   Create a file named `.env`.
-    *   Add your PostgreSQL database URL to this file:
-        ```
-        DATABASE_URL=postgresql://your_user:your_password@localhost/flowcfd
-        ```
-    *   **Note for users without PostgreSQL development headers:** If you cannot install `postgresql-devel` or `libpq-dev`, you can use the `pg8000` pure Python driver. First, edit `backend/requirements.txt` to comment out `psycopg2-binary` and uncomment `pg8000`. Then, modify your `DATABASE_URL` to use the `pg8000` driver like so:
-        ```
-        DATABASE_URL=postgresql+pg8000://your_user:your_password@localhost/flowcfd
-        ```
+1. **Clone the repository:**
+   ```bash
+   git clone <repository-url>
+   cd flowCFD
+   ```
 
-2.  **Set up the backend:**
+2. **Set up the backend:**
+   ```bash
+   cd backend
+   python -m venv .venv
+   source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+   pip install -r requirements.txt
+   ```
 
-    The backend is powered by FastAPI. The `run.sh` script handles the installation of dependencies and starts the server.
+3. **Set up the frontend:**
+   ```bash
+   cd frontend
+   npm install
+   ```
 
-    ```bash
-    cd backend
-    ./run.sh
-    ```
-    This will install the necessary Python packages in a local virtual environment (`.venv`) and start the backend server on `http://localhost:8000`.
+### Running the Application
 
-3.  **Set up the frontend:**
+1. **Start the backend server:**
+   ```bash
+   cd backend
+   source .venv/bin/activate
+   uvicorn app:app --host 0.0.0.0 --port 8000 --reload
+   ```
+   The backend API will be available at `http://localhost:8000`
 
-    The frontend is a React application built with Vite. Open a **new terminal** for this step.
+2. **Start the frontend development server:**
+   ```bash
+   cd frontend
+   npm run dev
+   ```
+   The frontend will be available at `http://localhost:5173`
 
-    ```bash
-    cd frontend
-    npm install
-    npm run dev
-    ```
-    This will install the required npm packages and start the frontend development server, typically on `http://localhost:5173`.
+## User Guide
 
-## Step-by-Step User Guide
+### 1. Upload Videos
+- Click "📁 Upload Video" and select a video file
+- The video will be processed and a thumbnail generated automatically
+- Multiple videos can be uploaded for multi-source timeline editing
 
-1.  **Access the Application:**
-    Open your web browser and navigate to the address provided by the Vite development server (e.g., `http://localhost:5173`).
+### 2. Mark and Create Clips
+- Use the video player to navigate to your desired start time
+- Click "📍 Mark IN" to set the beginning of your clip
+- Navigate to the end time and click "📍 Mark OUT"
+- Click "➕ Add to Timeline" to create the clip
+- The clip appears instantly in the timeline below
 
-2.  **Upload a Video:**
-    *   In the "1) Upload Video" section, click the "Choose File" button to select a video from your local machine.
-    *   Once uploaded, you will see a thumbnail, the filename, and the video's total duration.
+### 3. Preview Clips
+- **Click any clip in the timeline** to enter preview mode
+- The video player will show "🎬 Previewing Clip" with clip boundaries
+- Playback is restricted to just that clip segment
+- Click "📺 Play Full Video" to exit preview mode
 
-3.  **Mark Clips:**
-    *   The video will load in the "2) Video Player & Clip Marking" section.
-    *   Use the player controls to play and pause the video. You can click on the progress bar to seek to a specific time.
-    *   **To mark an IN point:** Navigate to your desired start time and click the "Mark IN" button.
-    *   **To mark an OUT point:** Navigate to your desired end time and click the "Mark OUT" button.
-    *   Once both an IN and an OUT point are set, click the **"Add Clip to Timeline"** button. The clip will appear in the Timeline section below the player.
-    *   Repeat this process to add as many clips as you need.
+### 4. Manage Timeline
+- **Reorder clips**: Drag clips to rearrange them
+- **Clear timeline**: Use "Clear Timeline" to remove all clips
+- **Visual feedback**: Hover over clips to see preview tooltips
 
-4.  **Build the Project:**
-    *   After adding all your clips to the timeline, go to the "3) Build Project & Export" section.
-    *   Click the **"Build .osp Project"** button. This tells the backend to generate an OpenShot project file from your clip list. This step is required before exporting.
+### 5. Build Final Video
+- Click "🚀 Build Timeline Video" when ready
+- The system will extract and concatenate all clips using FFmpeg
+- The final video downloads automatically when complete
+- Built videos are saved with timestamps (e.g., `timeline_build_20250907_174304.mp4`)
 
-5.  **Export the Video:**
-    *   Once the project is built, click the **"Start Export"** button.
-    *   The export process will begin on the server. You can monitor its progress in real-time via the status bar that appears. It will show the percentage complete and an estimated time remaining (ETA).
+## Key Features Explained
 
-6.  **Download the Final Video:**
-    *   When the export status reaches "completed" and the progress bar is at 100%, a **"Download Final MP4"** link will appear.
-    *   Click this link to download your finished, edited video.
+### Clip Preview System
+The application's signature feature allows users to click any timeline clip to instantly preview that specific segment. When in preview mode:
+- Video playback is restricted to the clip boundaries
+- Visual indicators show the active clip timing and duration
+- Easy exit with the prominent "Play Full Video" button
 
-## Backend API
+### Smart Visual Feedback
+- **Timeline Clips**: Hover effects, scaling animations, and selection states
+- **Interactive Tooltips**: "🎬 Click to preview this clip" appears on hover
+- **Progress Indicators**: Real-time visual feedback during processing
+- **Trim Markers**: Visual timeline showing IN/OUT points and current position
 
-The backend exposes a RESTful API for the frontend to interact with. Here are the main endpoints:
+### Efficient Video Processing
+- **Stream Copy First**: Attempts fast stream copying before re-encoding
+- **Encoder Fallbacks**: Gracefully handles different FFmpeg configurations
+- **Temporary File Management**: Secure processing with automatic cleanup
+- **Clip-Specific Thumbnails**: Each clip gets its own thumbnail from the midpoint
 
-- `POST /api/users/register`: Register a new user.
-- `POST /api/token`: Log in and get a JWT token.
-- `POST /api/videos/upload`: Upload a video file.
-- `POST /api/clips/mark`: Creates a new clip.
-- `DELETE /api/clips/{clip_id}`: Deletes a clip.
-- `POST /api/clips/reorder/{video_id}`: Re-orders the clips for a video.
-- `POST /api/projects/build`: Builds an OpenShot project from the marked clips.
-- `POST /api/exports/start`: Starts the export process. This endpoint is **idempotent** and accepts an `Idempotency-Key` header to prevent duplicate exports.
-- `GET /api/exports/{export_id}/status`: Gets the status of an export.
-- `GET /api/videos/{video_id}/exports/latest`: Gets the latest active export for a video, used for resuming state.
-- `GET /api/exports/{export_id}/download`: Gets the download URL for a completed export.
-- `WS /ws/exports/{export_id}`: WebSocket endpoint for real-time export progress.
+## API Endpoints
+
+### Video Management
+- `POST /api/videos/upload` - Upload video files
+- `GET /api/videos` - List all uploaded videos
+- `GET /api/videos/{video_id}` - Get video details
+
+### Clip Operations  
+- `POST /api/clips/mark` - Create a new clip
+- `GET /api/timeline/clips` - Get all timeline clips
+- `DELETE /api/timeline/clear` - Clear all timeline clips
+
+### Project Building
+- `POST /api/projects/build` - Build timeline video from clips
+- `GET /api/projects/download/{filename}` - Download built video
+
+### Static Assets
+- `GET /static/uploads/{filename}` - Access uploaded video files
+- `GET /static/thumbnails/{filename}` - Access generated thumbnails
+
+## Development
+
+### Backend Development
+- The backend uses **FastAPI** with automatic API documentation at `/docs`
+- **SQLite** database with auto-creation of tables on startup
+- **Background tasks** for thumbnail generation
+- **File validation** and secure upload handling
+
+### Frontend Development
+- **React 18** with **TypeScript** for type safety
+- **Vite** for fast development and hot module replacement
+- **TanStack React Query** for server state management
+- **Zustand** for client state with persistence middleware
+- **React Hot Toast** for user notifications
+
+### Testing the Application
+The application includes comprehensive testing workflows that verify:
+- Video upload and processing
+- Clip creation and timeline management
+- Video building and download functionality
+- UI responsiveness and error handling
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Test thoroughly using the built-in workflows
+5. Submit a pull request
+
+## License
+
+This project is designed for educational and development purposes, showcasing modern web-based video editing techniques with FFmpeg integration.
