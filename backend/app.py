@@ -198,6 +198,25 @@ def regenerate_all_clip_thumbnails(db: Session = Depends(get_db)):
     
     return {"message": f"Generated thumbnails for {count} clips"}
 
+@app.delete("/api/timeline/clear")
+def clear_timeline(db: Session = Depends(get_db)):
+    """
+    Clear all clips from the timeline.
+    """
+    deleted_count = db.query(models.Clip).delete()
+    db.commit()
+    
+    # Also delete clip thumbnail files
+    import glob
+    clip_thumbnails = glob.glob(os.path.join(THUMBNAILS_DIR, "clip_*.jpg"))
+    for thumbnail in clip_thumbnails:
+        try:
+            os.remove(thumbnail)
+        except OSError:
+            pass
+    
+    return {"message": f"Cleared {deleted_count} clips from timeline"}
+
 @app.get("/api/videos/{video_id}", response_model=schemas.VideoOut)
 def get_video(video_id: str, db: Session = Depends(get_db)):
     db_video = db.query(models.Video).filter(models.Video.id == video_id).first()
@@ -245,23 +264,16 @@ def mark_clip(clip: schemas.ClipIn, db: Session = Depends(get_db)):
 
 @app.get("/api/videos/{video_id}/exports/latest")
 def get_latest_active_export(video_id: str, db: Session = Depends(get_db)):
-    """
-    Gets the latest active (queued or processing) export for a video.
-    Returns status object if no active export is found.
-    """
-    try:
-        latest_export = db.query(models.Export).filter(
-            models.Export.video_id == video_id,
-            models.Export.status.in_(["queued", "processing"])
-        ).order_by(models.Export.created_at.desc()).first()
+    """Gets the latest active export for a video."""
+    latest_export = db.query(models.Export).filter(
+        models.Export.video_id == video_id,
+        models.Export.status.in_(["queued", "processing"])
+    ).order_by(models.Export.created_at.desc()).first()
 
-        if not latest_export:
-            return {"status": "none", "message": "No active exports"}
-        
-        return {"status": "active", "export": latest_export}
-    except Exception as e:
-        print(f"Error in get_latest_active_export: {e}")
-        return {"status": "error", "message": "Failed to get export status"}
+    if not latest_export:
+        return {"status": "none", "message": "No active exports"}
+    
+    return {"status": "active", "export": latest_export}
 
 # CORRECTED: Made this endpoint consistent with the others, nesting it under /api/videos/{video_id}
 @app.get("/api/videos/{video_id}/clips", response_model=List[schemas.ClipOut])
