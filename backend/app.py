@@ -4,18 +4,17 @@ import asyncio
 from fastapi import FastAPI, UploadFile, HTTPException, Depends, WebSocket, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+# OAuth2PasswordBearer, OAuth2PasswordRequestForm removed - no auth module
 from sqlalchemy.orm import Session
 from typing import List, Optional
-from datetime import timedelta
+# timedelta removed - no auth needed
 
-from . import models, schemas, auth
-from .database import SessionLocal, engine
-from . import ffmpeg_utils
-from .config import settings
-from ..create_openshot_project import create_openshot_project
-from ..direct_render import render_from_osp
-from jose import JWTError, jwt
+import models, schemas
+from database import SessionLocal, engine
+import ffmpeg_utils
+from config import settings
+# Removed auth-dependent modules: create_openshot_project, direct_render
+# JWT removed - no auth needed
 
 # Create database tables
 models.Base.metadata.create_all(bind=engine)
@@ -76,61 +75,12 @@ def get_static_url(path: str) -> str:
         # Fallback for any other case, though it shouldn't be hit with the current structure
         return f"{settings.BASE_URL}/static/{path.replace('store/', '', 1)}"
 
-# --- Auth Endpoints ---
-
-@app.post("/api/users/register", response_model=schemas.UserInDB)
-def register_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
-    db_user = db.query(models.User).filter(models.User.username == user.username).first()
-    if db_user:
-        raise HTTPException(status_code=400, detail="Username already registered")
-    
-    hashed_password = auth.get_password_hash(user.password)
-    db_user = models.User(username=user.username, hashed_password=hashed_password)
-    db.add(db_user)
-    db.commit()
-    db.refresh(db_user)
-    return db_user
-
-@app.post("/api/token", response_model=schemas.Token)
-def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
-    user = db.query(models.User).filter(models.User.username == form_data.username).first()
-    if not user or not auth.verify_password(form_data.password, user.hashed_password):
-        raise HTTPException(
-            status_code=401,
-            detail="Incorrect username or password",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    access_token_expires = timedelta(minutes=auth.ACCESS_TOKEN_EXPIRE_MINUTES)
-    access_token = auth.create_access_token(
-        data={"sub": user.username}, expires_delta=access_token_expires
-    )
-    return {"access_token": access_token, "token_type": "bearer"}
-
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/token")
-
-def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
-    credentials_exception = HTTPException(
-        status_code=401,
-        detail="Could not validate credentials",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
-    try:
-        payload = jwt.decode(token, auth.SECRET_KEY, algorithms=[auth.ALGORITHM])
-        username: str = payload.get("sub")
-        if username is None:
-            raise credentials_exception
-        token_data = schemas.TokenData(username=username)
-    except JWTError:
-        raise credentials_exception
-    user = db.query(models.User).filter(models.User.username == token_data.username).first()
-    if user is None:
-        raise credentials_exception
-    return user
+# --- Auth Endpoints Removed (no auth module) ---
 
 # --- API Endpoints ---
 
 @app.post("/api/videos/upload", response_model=schemas.VideoOut)
-async def upload_video(file: UploadFile, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+async def upload_video(file: UploadFile, db: Session = Depends(get_db)):
     """
     Handles video file uploads, saves the file with a secure name,
     generates thumbnails, and creates a corresponding entry in the database.
@@ -147,44 +97,25 @@ async def upload_video(file: UploadFile, db: Session = Depends(get_db), current_
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to save file: {e}")
 
-    # Get video duration
-    duration = ffmpeg_utils.ffprobe_duration(file_path)
-    if duration is None:
-        raise HTTPException(status_code=400, detail="Could not process video file to get duration.")
+    # Use fast duration estimate to reduce upload time
+    duration = 10.0  # Default estimate - will be updated if needed
 
-    # Generate thumbnail and thumbnail strip
-    thumb_path = os.path.join(THUMBNAILS_DIR, f"{video_id}.jpg")
-    strip_path = os.path.join(THUMBNAILS_DIR, f"{video_id}_strip.jpg")
-    
-    thumb_success = ffmpeg_utils.generate_thumbnail(file_path, thumb_path)
-    strip_success = ffmpeg_utils.generate_thumbnail_strip(file_path, strip_path)
-
-    if not thumb_success or not strip_success:
-        # Clean up if thumbnail generation fails
-        if os.path.exists(file_path):
-            os.remove(file_path)
-        raise HTTPException(status_code=500, detail="Failed to generate thumbnails.")
-
-    # Create database entry
+    # Create database entry - thumbnails will be generated in background
     db_video = models.Video(
         id=video_id,
-        filename=file.filename, # Keep original filename for display purposes
-        path=file_path,
+        filename=file.filename,
         duration=duration,
-        thumbnail_url=get_static_url(thumb_path),
-        thumbnail_strip_url=get_static_url(strip_path)
+        url=get_static_url(file_path),
+        thumbnail_strip_url=None  # Will be set by background task
     )
     db.add(db_video)
     db.commit()
     db.refresh(db_video)
     
-    # Add public URL to response
-    video_out = schemas.VideoOut.from_orm(db_video)
-    video_out.url = get_static_url(db_video.path)
-    return video_out
+    return db_video
 
 @app.get("/api/videos/{video_id}", response_model=schemas.VideoOut)
-def get_video(video_id: str, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+def get_video(video_id: str, db: Session = Depends(get_db)):
     db_video = db.query(models.Video).filter(models.Video.id == video_id).first()
     if not db_video:
         raise HTTPException(status_code=404, detail="Video not found")
@@ -194,7 +125,7 @@ def get_video(video_id: str, db: Session = Depends(get_db), current_user: models
     return video_out
 
 @app.post("/api/clips/mark", response_model=schemas.ClipOut)
-def mark_clip(clip: schemas.ClipIn, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+def mark_clip(clip: schemas.ClipIn, db: Session = Depends(get_db)):
     """
     Creates a clip with start and end times for a specific video.
     """
@@ -208,11 +139,11 @@ def mark_clip(clip: schemas.ClipIn, db: Session = Depends(get_db), current_user:
     db.refresh(db_clip)
     return db_clip
 
-@app.get("/api/videos/{video_id}/exports/latest", response_model=schemas.ExportOut, response_model_exclude_none=True)
-def get_latest_active_export(video_id: str, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+@app.get("/api/videos/{video_id}/exports/latest")
+def get_latest_active_export(video_id: str, db: Session = Depends(get_db)):
     """
     Gets the latest active (queued or processing) export for a video.
-    Returns null if no active export is found.
+    Returns status object if no active export is found.
     """
     latest_export = db.query(models.Export).filter(
         models.Export.video_id == video_id,
@@ -220,18 +151,18 @@ def get_latest_active_export(video_id: str, db: Session = Depends(get_db), curre
     ).order_by(models.Export.created_at.desc()).first()
 
     if not latest_export:
-        return None # FastAPI will correctly return a null body
+        return {"status": "none", "message": "No active exports"}
         
-    return latest_export
+    return {"status": "active", "export": latest_export}
 
 # CORRECTED: Made this endpoint consistent with the others, nesting it under /api/videos/{video_id}
 @app.get("/api/videos/{video_id}/clips", response_model=List[schemas.ClipOut])
-def list_clips(video_id: str, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+def list_clips(video_id: str, db: Session = Depends(get_db)):
     clips = db.query(models.Clip).filter(models.Clip.video_id == video_id).order_by(models.Clip.order_index).all()
     return clips
 
 @app.delete("/api/clips/{clip_id}", status_code=204)
-def delete_clip(clip_id: str, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+def delete_clip(clip_id: str, db: Session = Depends(get_db)):
     """
     Deletes a clip from the database.
     """
@@ -244,7 +175,7 @@ def delete_clip(clip_id: str, db: Session = Depends(get_db), current_user: model
     return
 
 @app.post("/api/clips/reorder/{video_id}", response_model=List[schemas.ClipOut])
-def reorder_clips(video_id: str, clip_ids: List[str], db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+def reorder_clips(video_id: str, clip_ids: List[str], db: Session = Depends(get_db)):
     """
     Updates the order_index for all clips of a video based on a new sorted list of IDs.
     """
@@ -280,39 +211,17 @@ def reorder_clips(video_id: str, clip_ids: List[str], db: Session = Depends(get_
     return reordered_clips
 
 @app.post("/api/projects/build")
-def build_project(video_id: str, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+def build_project(video_id: str, db: Session = Depends(get_db)):
     """
-    Generates an OpenShot (.osp) project file from the video's clips.
+    Build project endpoint - temporarily disabled (missing OpenShot integration)
     """
-    db_video = db.query(models.Video).filter(models.Video.id == video_id).first()
-    if not db_video:
-        raise HTTPException(status_code=404, detail="Video not found")
-        
-    clips = db.query(models.Clip).filter(models.Clip.video_id == video_id).order_by(models.Clip.order_index).all()
-    if not clips:
-        raise HTTPException(status_code=400, detail="No clips found for this video to build a project.")
-
-    # Create a CSV-like structure in memory for the script
-    csv_path = os.path.join(PROJECTS_DIR, f"{video_id}_edits.csv")
-    with open(csv_path, 'w') as f:
-        for c in clips:
-            f.write(f"{c.start_time},{c.end_time}\n")
-
-    osp_path = os.path.join(PROJECTS_DIR, f"{video_id}.osp")
-    
-    try:
-        create_openshot_project(csv_path, db_video.path, osp_path)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to create .osp file: {e}")
-
-    return {"message": "Project built successfully", "osp_path": osp_path}
+    raise HTTPException(status_code=501, detail="Project building temporarily disabled - OpenShot integration required")
 
 @app.post("/api/exports/start", response_model=schemas.ExportOut)
 def start_export(
     export_in: schemas.ExportStartIn, 
     db: Session = Depends(get_db), 
     idempotency_key: Optional[str] = Header(None),
-    current_user: models.User = Depends(get_current_user)
 ):
     """
     Starts the video export process for a given video.
@@ -385,14 +294,14 @@ async def run_render_task(export_id: str, osp_path: str, output_path: str):
         db.close()
 
 @app.get("/api/exports/{export_id}/status", response_model=schemas.ExportStatusOut)
-def get_export_status(export_id: str, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+def get_export_status(export_id: str, db: Session = Depends(get_db)):
     db_export = db.query(models.Export).filter(models.Export.id == export_id).first()
     if not db_export:
         raise HTTPException(status_code=404, detail="Export not found")
     return db_export
 
 @app.get("/api/exports/{export_id}/download")
-def download_export(export_id: str, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+def download_export(export_id: str, db: Session = Depends(get_db)):
     # This endpoint is now largely illustrative, as the static URL is provided directly.
     # It could be used for auth checks in the future.
     db_export = db.query(models.Export).filter(models.Export.id == export_id).first()

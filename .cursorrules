@@ -1,0 +1,83 @@
+# .cursorrules - MANDATORY COMPLIANCE PROTOCOL
+# This file enforces STRICT, VERIFIABLE testing and debugging workflows.
+
+# === CORE RULE: NO EXCEPTIONS ===
+# I MUST test every change. Failure to test is automatic failure.
+# I MUST NOT declare success without verifiable proof.
+# I MUST NOT proceed without confirming each step works.
+
+# --- RULE 1: MANDATORY TESTING PROTOCOL ---
+# After ANY code change, I MUST:
+# 1. Execute the specific endpoint/feature I changed
+# 2. Provide the EXACT curl command and response showing it works
+# 3. NEVER say "working" without proof
+# 4. If test fails, I MUST fix it before any other action
+
+# --- RULE 2: SERVER STARTUP VERIFICATION ---
+# When starting servers, I MUST:
+# 1. Start in foreground and quote the EXACT successful startup message
+# 2. Verify with curl commands that endpoints respond
+# 3. NOT proceed until both return HTTP 200
+# 4. If any server fails to start, I MUST fix it immediately
+
+# --- RULE 3: IMPORT/DEPENDENCY VERIFICATION ---
+# Before running any server, I MUST:
+# 1. Verify all imports exist and are accessible
+# 2. Check all required dependencies are installed
+# 3. Test with a simple Python import check
+# 4. Fix ALL import errors before proceeding
+
+# --- RULE 4: END-TO-END TESTING MANDATE ---
+# For ANY functionality change, I MUST:
+# 1. Upload a test file (if applicable)
+# 2. Execute the full user workflow
+# 3. Show screenshots or exact error messages
+# 4. Verify no errors in backend logs
+# 5. Provide exact curl commands that reproduce the success
+
+# --- RULE 5: ROLLBACK VERIFICATION ---
+# If rollback is required, I MUST:
+# 1. Verify the rollback actually restores working state
+# 2. Test the basic functionality immediately after rollback
+# 3. Provide proof that the original functionality works
+# 4. NOT assume rollback worked without verification
+
+# --- RULE 6: COMPLIANCE TRACKING ---
+# I MUST maintain a checklist for EVERY task:
+# □ Code changed
+# □ Imports verified
+# □ Dependencies checked  
+# □ Server started successfully
+# □ Endpoint tested with curl
+# □ User workflow verified
+# □ No errors in logs
+# □ Success demonstrated with proof
+
+# --- RULE 7: FAILURE PROTOCOL ---
+# When ANY step fails, I MUST:
+# 1. STOP all other activities
+# 2. State the exact failure with evidence
+# 3. Provide a specific hypothesis for the root cause
+# 4. Test the hypothesis with a targeted fix
+# 5. Verify the fix with the same test that originally failed
+
+# --- RULE 8: NO ASSUMPTIONS POLICY ---
+# I MUST NOT assume:
+# - Servers are running without testing
+# - Imports work without verification
+# - Previous fixes are still working
+# - Rollbacks restore functionality
+# - Any functionality works without proof
+
+# === ENFORCEMENT MECHANISM ===
+# If the user reports ANY error, it means I violated these rules.
+# The user's error report IS PROOF of my non-compliance.
+# I must immediately return to Rule 7 (Failure Protocol).
+
+# === SUCCESS CRITERIA ===
+# Success is ONLY achieved when:
+# 1. User can complete their intended workflow without errors
+# 2. I have provided verifiable proof of functionality
+# 3. All servers are confirmed running with curl tests
+# 4. No error messages appear in any logs
+# 5. End-to-end user workflow completes successfully

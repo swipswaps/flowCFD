@@ -145,7 +145,7 @@ export default function Timeline({ clips, videoDuration, activeVideo }: Timeline
   
   const totalTimelineDuration = calculateTotalTimelineDuration();
 
-  const getThumbnailClipStyle = useCallback((clip: ClipOut, isHovered: boolean) => {
+  const getThumbnailClipStyle = useCallback((clip: ClipOut, isHovered: boolean, isSelected: boolean) => {
     if (!activeVideo?.thumbnail_strip_url || !activeVideo.duration || activeVideo.duration === 0) {
       return {};
     }
@@ -243,7 +243,7 @@ export default function Timeline({ clips, videoDuration, activeVideo }: Timeline
                 fontWeight: "bold",
                 cursor: "pointer",
                 position: "relative",
-                ...getThumbnailClipStyle(clip, isHovered)
+                ...getThumbnailClipStyle(clip, isHovered, isSelected)
               }}
               title={`Clip ${index + 1}: ${formatTime(clip.start_time)} - ${formatTime(clip.end_time)}`}
             >
