@@ -98,25 +98,25 @@ export default function Editor() {
 
   // NEW: Effect to check for and resume monitoring an active export on video load
   useEffect(() => {
-    if (activeVideoId) {
+    if (activeVideoId && !exportId) { // Only check if no export is currently being monitored
       // Reset status for new video
-      setExportId(null);
       setExportStatus({progress: 0, status: "idle"});
 
       (async () => {
         try {
-          const activeExport = await getLatestActiveExport(activeVideoId);
-          if (activeExport) {
+          const activeExportResponse = await getLatestActiveExport(activeVideoId);
+          if (activeExportResponse && activeExportResponse.status === "active" && activeExportResponse.export) {
             toast.success("Resumed monitoring an in-progress export.");
-            setExportId(activeExport.id);
-            monitorExport(activeExport.id);
+            setExportId(activeExportResponse.export.id);
+            monitorExport(activeExportResponse.export.id);
           }
         } catch (error) {
-          toast.error(`Could not check for active exports: ${(error as Error).message}`);
+          console.error("Error checking for active exports:", error);
+          // Don't show toast for initial check failures to avoid spam
         }
       })();
     }
-  }, [activeVideoId]);
+  }, [activeVideoId, exportId]);
 
   // NEW: Extracted monitoring logic to be reusable
   const monitorExport = (currentExportId: string) => {
@@ -259,7 +259,13 @@ export default function Editor() {
 
       <section className="editor-section">
         <h2>2) Video Player & Clip Marking</h2>
-        <VideoPlayer videoUrl={activeVideo?.url || ""} videoDuration={activeVideo?.duration || 0} />
+        {isLoadingVideo ? (
+          <div>Loading video...</div>
+        ) : activeVideo ? (
+          <VideoPlayer videoUrl={activeVideo.url} videoDuration={activeVideo.duration} />
+        ) : (
+          <div>No video selected</div>
+        )}
         <div className="marking-controls">
             <button 
                 onClick={handleAddClip} 

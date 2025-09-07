@@ -47,6 +47,7 @@ export const useEditorStore = create<EditorState>()(
         markedIn: state.markedIn,
         markedOut: state.markedOut,
         selectedClipId: state.selectedClipId,
+        playerDuration: state.playerDuration,
       }),
     }
   )

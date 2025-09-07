@@ -150,9 +150,9 @@ export default function Timeline({ clips, videoDuration, activeVideo }: Timeline
       return {};
     }
 
-    // Calculate the frame index for the clip's start time on the strip
-    // Use the clip's start_time which represents the IN point in the source video
-    const frameIndex = Math.floor(clip.start_time / THUMBNAIL_FRAME_INTERVAL);
+    // Calculate representative time for this clip (midpoint between start and end)
+    const clipMidpoint = (clip.start_time + clip.end_time) / 2;
+    const frameIndex = Math.floor(clipMidpoint / THUMBNAIL_FRAME_INTERVAL);
     
     // Calculate number of frames in the strip and frame width
     const totalFrames = Math.ceil(activeVideo.duration / THUMBNAIL_FRAME_INTERVAL);
@@ -162,11 +162,11 @@ export default function Timeline({ clips, videoDuration, activeVideo }: Timeline
     const frameWidth = THUMBNAIL_STRIP_HEIGHT * (16 / 9); // 80 * (16/9) = ~142px
     
     // Calculate background-position-x to "scroll" the strip to the correct frame
-    // This shows the frame from the source video at the clip's IN point
+    // This shows the frame from the source video at the clip's midpoint time
     const backgroundPositionX = -(frameIndex * frameWidth);
 
     // Debug logging (remove in production)
-    console.log(`Clip ${clip.id}: start_time=${clip.start_time}, frameIndex=${frameIndex}, frameWidth=${frameWidth}, bgPos=${backgroundPositionX}`);
+    console.log(`Clip ${clip.id}: start=${clip.start_time}, end=${clip.end_time}, midpoint=${clipMidpoint}, frameIndex=${frameIndex}, bgPos=${backgroundPositionX}`);
 
     return {
       backgroundImage: `url(${activeVideo.thumbnail_strip_url})`,
