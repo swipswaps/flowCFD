@@ -103,14 +103,18 @@ export default function Editor() {
       setExportId(null);
       setExportStatus({progress: 0, status: "idle"});
 
-      getLatestActiveExport(activeVideoId).then(activeExport => {
-        if (activeExport) {
-          toast.success("Resumed monitoring an in-progress export.");
-          setExportId(activeExport.id);
-          // Trigger the monitoring logic (this is a simplified version of the logic in startExportMutation)
-          monitorExport(activeExport.id);
+      (async () => {
+        try {
+          const activeExport = await getLatestActiveExport(activeVideoId);
+          if (activeExport) {
+            toast.success("Resumed monitoring an in-progress export.");
+            setExportId(activeExport.id);
+            monitorExport(activeExport.id);
+          }
+        } catch (error) {
+          toast.error(`Could not check for active exports: ${(error as Error).message}`);
         }
-      });
+      })();
     }
   }, [activeVideoId]);
 

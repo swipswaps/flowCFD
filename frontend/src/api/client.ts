@@ -24,16 +24,46 @@ export type ExportOut = {
   download_url?: string | null;
 };
 
+// --- Auth ---
+
+// A global place to store the token
+let authToken: string | null = null;
+
+export function setAuthToken(token: string) {
+  authToken = token;
+}
+
+export async function login(username: string, password: string):Promise<{access_token:string}> {
+    const formData = new FormData();
+    formData.append('username', username);
+    formData.append('password', password);
+    const res = await fetch('/api/token', {
+        method: 'POST',
+        body: formData,
+    });
+    if (!res.ok) throw new Error(await res.text());
+    const data = await res.json();
+    setAuthToken(data.access_token);
+    return data;
+}
+
+
 export async function uploadVideo(file: File): Promise<VideoOut> {
   const fd = new FormData();
   fd.append("file", file);
-  const res = await fetch("/api/videos/upload", { method: "POST", body: fd });
+  const res = await fetch("/api/videos/upload", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${authToken}` },
+    body: fd
+  });
   if (!res.ok) throw new Error(await res.text());
   return res.json();
 }
 
 export async function getVideo(id: string): Promise<VideoOut> {
-  const res = await fetch(`/api/videos/${id}`);
+  const res = await fetch(`/api/videos/${id}`, {
+    headers: { Authorization: `Bearer ${authToken}` }
+  });
   if (!res.ok) throw new Error(await res.text());
   return res.json();
 }
@@ -46,7 +76,7 @@ export async function markClip(input: {
 }): Promise<ClipOut> {
   const res = await fetch(`/api/clips/mark`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${authToken}` },
     body: JSON.stringify({ order_index: 0, ...input })
   });
   if (!res.ok) throw new Error(await res.text());
@@ -54,9 +84,15 @@ export async function markClip(input: {
 }
 
 export async function listClips(video_id: string): Promise<ClipOut[]> {
-  const res = await fetch(`/api/clips/${video_id}`);
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
+  const res = await fetch(`/api/videos/${video_id}/clips`, {
+    headers: { Authorization: `Bearer ${authToken}` }
+  });
+  if (!res.ok) {
+    const errorText = await res.text();
+    throw new Error(errorText);
+  }
+  const data = await res.json();
+  return data;
 }
 
 export async function updateClip(clip_id: string, input: {
@@ -67,7 +103,7 @@ export async function updateClip(clip_id: string, input: {
 }): Promise<ClipOut> {
   const res = await fetch(`/api/clips/${clip_id}`, {
     method: "PUT",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${authToken}` },
     body: JSON.stringify({ order_index: 0, ...input })
   });
   if (!res.ok) throw new Error(await res.text());
@@ -77,7 +113,7 @@ export async function updateClip(clip_id: string, input: {
 export async function reorderClips(video_id: string, clip_ids: string[]): Promise<ClipOut[]> {
   const res = await fetch(`/api/clips/reorder/${video_id}`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${authToken}` },
     body: JSON.stringify(clip_ids)
   });
   if (!res.ok) throw new Error(await res.text());
@@ -85,7 +121,10 @@ export async function reorderClips(video_id: string, clip_ids: string[]): Promis
 }
 
 export async function deleteClip(clip_id: string): Promise<{ ok: boolean }> {
-  const res = await fetch(`/api/clips/${clip_id}`, { method: "DELETE" });
+  const res = await fetch(`/api/clips/${clip_id}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${authToken}` }
+  });
   if (!res.ok) throw new Error(await res.text());
   return res.json();
 }
@@ -93,7 +132,11 @@ export async function deleteClip(clip_id: string): Promise<{ ok: boolean }> {
 export async function buildProject(video_id: string): Promise<{ video_id: string; osp: string }> {
   const fd = new FormData();
   fd.append("video_id", video_id);
-  const res = await fetch(`/api/projects/build`, { method: "POST", body: fd });
+  const res = await fetch(`/api/projects/build`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${authToken}` },
+    body: fd
+  });
   if (!res.ok) throw new Error(await res.text());
   return res.json();
 }
@@ -103,7 +146,8 @@ export async function startExport(video_id: string): Promise<ExportOut> {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "Idempotency-Key": crypto.randomUUID()
+      "Idempotency-Key": crypto.randomUUID(),
+      Authorization: `Bearer ${authToken}`
     },
     body: JSON.stringify({ video_id })
   });
@@ -112,7 +156,9 @@ export async function startExport(video_id: string): Promise<ExportOut> {
 }
 
 export async function getLatestActiveExport(video_id: string): Promise<ExportOut | null> {
-  const res = await fetch(`/api/videos/${video_id}/exports/latest`);
+  const res = await fetch(`/api/videos/${video_id}/exports/latest`, {
+    headers: { Authorization: `Bearer ${authToken}` }
+  });
   if (!res.ok) throw new Error(await res.text());
   if (res.status === 204 || res.headers.get("content-length") === "0") {
     return null; // Handle cases where no active export is found
@@ -130,7 +176,9 @@ export type ExportStatus = {
 };
 
 export async function getExportStatus(export_id: string): Promise<ExportStatus> {
-  const res = await fetch(`/api/exports/${export_id}/status`);
+  const res = await fetch(`/api/exports/${export_id}/status`, {
+    headers: { Authorization: `Bearer ${authToken}` }
+  });
   if (!res.ok) throw new Error(await res.text());
   return res.json();
 }

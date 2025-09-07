@@ -1,16 +1,19 @@
-# Python
-__pycache__/
-*.pyc
-.venv/
+# Dependencies
+/frontend/node_modules
+/backend/.venv
 
-# Node
-node_modules/
+# Build artifacts
+/frontend/dist
+/frontend/playwright-report
+/frontend/test-results
 
-# User-generated content (store)
-store/uploads/
-store/thumbnails/
-store/projects/
-store/exports/
+# User-generated content
+/store/*
+!/store/.gitkeep
+
+# Environment files
+.env
+*.env.local
 
 # IDE / Editor specific
 .vscode/
@@ -19,10 +22,3 @@ store/exports/
 # OS specific
 .DS_Store
 Thumbs.db
-
-# Logs
-*.log
-
-# Test results and reports
-/frontend/playwright-report/
-/frontend/test-results/

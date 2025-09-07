@@ -14,7 +14,7 @@ class Video(Base):
     path: Mapped[str] = mapped_column(String, nullable=False)
     duration: Mapped[float | None] = mapped_column(Float, nullable=True)
     thumbnail_url: Mapped[str | None] = mapped_column(String, nullable=True)
-    thumbnail_strip_url: Mapped[str | None] = mapped_column(String, nullable=True) # THIS MUST BE PRESENT
+    thumbnail_strip_url: Mapped[str] = mapped_column(String, nullable=False) # THIS MUST BE PRESENT
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     clips: Mapped[list["Clip"]] = relationship("Clip", back_populates="video", cascade="all, delete-orphan")
     exports: Mapped[list["Export"]] = relationship("Export", back_populates="video", cascade="all, delete-orphan")
@@ -44,3 +44,10 @@ class Export(Base):
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     estimated_time_remaining_seconds: Mapped[float | None] = mapped_column(Float, nullable=True)
     video: Mapped["Video"] = relationship("Video", back_populates="exports")
+
+class User(Base):
+    __tablename__ = "users"
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=uid)
+    username: Mapped[str] = mapped_column(String, unique=True, index=True, nullable=False)
+    hashed_password: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

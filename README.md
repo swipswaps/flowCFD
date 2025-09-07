@@ -71,6 +71,10 @@ Follow these instructions to set up and run the project locally.
         ```
         DATABASE_URL=postgresql://your_user:your_password@localhost/flowcfd
         ```
+    *   **Note for users without PostgreSQL development headers:** If you cannot install `postgresql-devel` or `libpq-dev`, you can use the `pg8000` pure Python driver. First, edit `backend/requirements.txt` to comment out `psycopg2-binary` and uncomment `pg8000`. Then, modify your `DATABASE_URL` to use the `pg8000` driver like so:
+        ```
+        DATABASE_URL=postgresql+pg8000://your_user:your_password@localhost/flowcfd
+        ```
 
 2.  **Set up the backend:**
 
@@ -126,6 +130,8 @@ Follow these instructions to set up and run the project locally.
 
 The backend exposes a RESTful API for the frontend to interact with. Here are the main endpoints:
 
+- `POST /api/users/register`: Register a new user.
+- `POST /api/token`: Log in and get a JWT token.
 - `POST /api/videos/upload`: Upload a video file.
 - `POST /api/clips/mark`: Creates a new clip.
 - `DELETE /api/clips/{clip_id}`: Deletes a clip.
