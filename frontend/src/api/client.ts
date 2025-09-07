@@ -130,12 +130,12 @@ export async function deleteClip(clip_id: string): Promise<{ ok: boolean }> {
 }
 
 export async function buildProject(video_id: string): Promise<{ video_id: string; osp: string }> {
-  const fd = new FormData();
-  fd.append("video_id", video_id);
-  const res = await fetch(`/api/projects/build`, {
+  const res = await fetch(`/api/projects/build?video_id=${encodeURIComponent(video_id)}`, {
     method: "POST",
-    headers: { Authorization: `Bearer ${authToken}` },
-    body: fd
+    headers: { 
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${authToken}` 
+    }
   });
   if (!res.ok) throw new Error(await res.text());
   return res.json();

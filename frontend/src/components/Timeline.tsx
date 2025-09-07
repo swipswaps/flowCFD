@@ -157,19 +157,20 @@ export default function Timeline({ clips, videoDuration, activeVideo }: Timeline
     // Calculate number of frames in the strip and frame width
     const totalFrames = Math.ceil(activeVideo.duration / THUMBNAIL_FRAME_INTERVAL);
     
-    // The strip is scaled to fit the timeline height, so we need to calculate the actual frame width
-    // based on the strip's aspect ratio and the timeline height
-    const stripAspectRatio = totalFrames * (16 / 9); // Assume 16:9 frames
-    const stripDisplayWidth = THUMBNAIL_STRIP_HEIGHT * stripAspectRatio;
-    const frameWidth = stripDisplayWidth / totalFrames;
+    // Use a fixed frame width that matches common video aspect ratios
+    // For a 80px height timeline, 16:9 frames would be ~142px wide
+    const frameWidth = THUMBNAIL_STRIP_HEIGHT * (16 / 9); // 80 * (16/9) = ~142px
     
     // Calculate background-position-x to "scroll" the strip to the correct frame
     // This shows the frame from the source video at the clip's IN point
     const backgroundPositionX = -(frameIndex * frameWidth);
 
+    // Debug logging (remove in production)
+    console.log(`Clip ${clip.id}: start_time=${clip.start_time}, frameIndex=${frameIndex}, frameWidth=${frameWidth}, bgPos=${backgroundPositionX}`);
+
     return {
       backgroundImage: `url(${activeVideo.thumbnail_strip_url})`,
-      backgroundSize: `${stripDisplayWidth}px ${THUMBNAIL_STRIP_HEIGHT}px`, // Set exact size to match calculations
+      backgroundSize: 'contain', // Scale to fit while maintaining aspect ratio
       backgroundPosition: `${backgroundPositionX}px center`, // Use pixels for precise positioning
       backgroundRepeat: 'no-repeat',
       filter: 'brightness(0.7)', // Slightly dim thumbnail to make text readable
