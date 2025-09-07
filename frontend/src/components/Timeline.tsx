@@ -151,6 +151,7 @@ export default function Timeline({ clips, videoDuration, activeVideo }: Timeline
     }
 
     // Calculate the frame index for the clip's start time on the strip
+    // Use the clip's start_time which represents the IN point in the source video
     const frameIndex = Math.floor(clip.start_time / THUMBNAIL_FRAME_INTERVAL);
     
     // Calculate number of frames in the strip and frame width
@@ -163,11 +164,12 @@ export default function Timeline({ clips, videoDuration, activeVideo }: Timeline
     const frameWidth = stripDisplayWidth / totalFrames;
     
     // Calculate background-position-x to "scroll" the strip to the correct frame
+    // This shows the frame from the source video at the clip's IN point
     const backgroundPositionX = -(frameIndex * frameWidth);
 
     return {
       backgroundImage: `url(${activeVideo.thumbnail_strip_url})`,
-      backgroundSize: 'auto 100%', // Scale height to fit, width auto (to maintain aspect ratio of the strip)
+      backgroundSize: `${stripDisplayWidth}px ${THUMBNAIL_STRIP_HEIGHT}px`, // Set exact size to match calculations
       backgroundPosition: `${backgroundPositionX}px center`, // Use pixels for precise positioning
       backgroundRepeat: 'no-repeat',
       filter: 'brightness(0.7)', // Slightly dim thumbnail to make text readable

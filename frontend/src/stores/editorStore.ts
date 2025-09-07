@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { persist } from "zustand/middleware";
 
 interface EditorState {
   playerCurrentTime: number;
@@ -19,21 +20,34 @@ interface EditorState {
   clearMarks: () => void;
 }
 
-export const useEditorStore = create<EditorState>((set) => ({
-  playerCurrentTime: 0,
-  playerDuration: 0,
-  isPlaying: false,
-  markedIn: null,
-  markedOut: null,
-  selectedClipId: null,
-  activeVideoId: null,
+export const useEditorStore = create<EditorState>()(
+  persist(
+    (set) => ({
+      playerCurrentTime: 0,
+      playerDuration: 0,
+      isPlaying: false,
+      markedIn: null,
+      markedOut: null,
+      selectedClipId: null,
+      activeVideoId: null,
 
-  setPlayerCurrentTime: (time) => set({ playerCurrentTime: time }),
-  setPlayerDuration: (duration) => set({ playerDuration: duration }),
-  setIsPlaying: (playing) => set({ isPlaying: playing }),
-  setMarkedIn: (time) => set({ markedIn: time }),
-  setMarkedOut: (time) => set({ markedOut: time }),
-  setSelectedClipId: (id) => set({ selectedClipId: id }),
-  setActiveVideoId: (id) => set({ activeVideoId: id }),
-  clearMarks: () => set({ markedIn: null, markedOut: null }),
-}));
+      setPlayerCurrentTime: (time) => set({ playerCurrentTime: time }),
+      setPlayerDuration: (duration) => set({ playerDuration: duration }),
+      setIsPlaying: (playing) => set({ isPlaying: playing }),
+      setMarkedIn: (time) => set({ markedIn: time }),
+      setMarkedOut: (time) => set({ markedOut: time }),
+      setSelectedClipId: (id) => set({ selectedClipId: id }),
+      setActiveVideoId: (id) => set({ activeVideoId: id }),
+      clearMarks: () => set({ markedIn: null, markedOut: null }),
+    }),
+    {
+      name: "editor-store", // localStorage key
+      partialize: (state) => ({
+        activeVideoId: state.activeVideoId,
+        markedIn: state.markedIn,
+        markedOut: state.markedOut,
+        selectedClipId: state.selectedClipId,
+      }),
+    }
+  )
+);

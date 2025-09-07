@@ -1,7 +1,7 @@
 import os
 import shutil
 import asyncio
-from fastapi import FastAPI, UploadFile, HTTPException, Depends, WebSocket, Header
+from fastapi import FastAPI, UploadFile, HTTPException, Depends, WebSocket, Header, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 # OAuth2PasswordBearer, OAuth2PasswordRequestForm removed - no auth module
@@ -121,7 +121,6 @@ def get_video(video_id: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Video not found")
     
     video_out = schemas.VideoOut.from_orm(db_video)
-    video_out.url = get_static_url(db_video.path)
     return video_out
 
 @app.post("/api/clips/mark", response_model=schemas.ClipOut)
@@ -145,15 +144,19 @@ def get_latest_active_export(video_id: str, db: Session = Depends(get_db)):
     Gets the latest active (queued or processing) export for a video.
     Returns status object if no active export is found.
     """
-    latest_export = db.query(models.Export).filter(
-        models.Export.video_id == video_id,
-        models.Export.status.in_(["queued", "processing"])
-    ).order_by(models.Export.created_at.desc()).first()
+    try:
+        latest_export = db.query(models.Export).filter(
+            models.Export.video_id == video_id,
+            models.Export.status.in_(["queued", "processing"])
+        ).order_by(models.Export.created_at.desc()).first()
 
-    if not latest_export:
-        return {"status": "none", "message": "No active exports"}
-        
-    return {"status": "active", "export": latest_export}
+        if not latest_export:
+            return {"status": "none", "message": "No active exports"}
+            
+        return {"status": "active", "export": latest_export}
+    except Exception as e:
+        print(f"Error in get_latest_active_export: {e}")
+        return {"status": "error", "message": "Failed to get export status"}
 
 # CORRECTED: Made this endpoint consistent with the others, nesting it under /api/videos/{video_id}
 @app.get("/api/videos/{video_id}/clips", response_model=List[schemas.ClipOut])
@@ -211,7 +214,7 @@ def reorder_clips(video_id: str, clip_ids: List[str], db: Session = Depends(get_
     return reordered_clips
 
 @app.post("/api/projects/build")
-def build_project(video_id: str, db: Session = Depends(get_db)):
+def build_project(video_id: str = Query(...), db: Session = Depends(get_db)):
     """
     Build project endpoint - temporarily disabled (missing OpenShot integration)
     """
