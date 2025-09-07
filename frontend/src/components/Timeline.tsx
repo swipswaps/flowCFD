@@ -1,14 +1,16 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import toast from "react-hot-toast";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { ClipOut, deleteClip, updateClip, reorderClips, VideoOut } from "../api/client";
+import { ClipOut, ClipWithVideoOut, deleteClip, updateClip, reorderClips, reorderTimelineClips, VideoOut } from "../api/client";
 import { useEditorStore } from "../stores/editorStore";
 import { formatTime } from "../utils/time";
 
 interface TimelineProps {
-  clips: ClipOut[];
+  clips: ClipOut[] | ClipWithVideoOut[]; // Support both single-video and multi-video clips
   videoDuration: number;
   activeVideo: VideoOut | null; // Pass activeVideo to get thumbnail_url
+  isGlobalTimeline?: boolean; // NEW: Flag for global timeline mode
+  onClipPlay?: (clip: ClipWithVideoOut) => void; // NEW: Callback when clip is clicked to play
 }
 
 // Define the expected strip height and frame interval from backend generation
@@ -16,7 +18,7 @@ interface TimelineProps {
 const THUMBNAIL_STRIP_HEIGHT = 80; // pixels
 const THUMBNAIL_FRAME_INTERVAL = 5; // seconds
 
-export default function Timeline({ clips, videoDuration, activeVideo }: TimelineProps) {
+export default function Timeline({ clips, videoDuration, activeVideo, isGlobalTimeline = false, onClipPlay }: TimelineProps) {
   const qc = useQueryClient();
   const { playerCurrentTime, setPlayerCurrentTime, selectedClipId, setSelectedClipId, setIsPlaying } = useEditorStore();
   const timelineRef = useRef<HTMLDivElement>(null);
@@ -36,7 +38,9 @@ export default function Timeline({ clips, videoDuration, activeVideo }: Timeline
     mutationFn: deleteClip,
     onSuccess: (_, clipId) => {
       toast.success("Clip deleted successfully.");
-      if (activeVideo) {
+      if (isGlobalTimeline) {
+        qc.invalidateQueries({ queryKey: ["timeline-clips"] });
+      } else if (activeVideo) {
         qc.invalidateQueries({ queryKey: ["clips", activeVideo.id] });
       }
       setSelectedClipId(null);
@@ -50,7 +54,9 @@ export default function Timeline({ clips, videoDuration, activeVideo }: Timeline
     mutationFn: ({ clip_id, input }: { clip_id: string, input: { video_id: string, start_time: number, end_time: number, order_index: number } }) => updateClip(clip_id, input),
     onSuccess: () => {
       toast.success("Clip updated successfully.");
-      if (activeVideo) {
+      if (isGlobalTimeline) {
+        qc.invalidateQueries({ queryKey: ["timeline-clips"] });
+      } else if (activeVideo) {
         qc.invalidateQueries({ queryKey: ["clips", activeVideo.id] });
       }
     },
@@ -59,7 +65,18 @@ export default function Timeline({ clips, videoDuration, activeVideo }: Timeline
     },
   });
 
-  const handleReorderClips = useMutation({
+  const handleReorderClipsGlobal = useMutation({
+    mutationFn: reorderTimelineClips,
+    onSuccess: () => {
+      toast.success("Clips reordered successfully.");
+      qc.invalidateQueries({ queryKey: ["timeline-clips"] });
+    },
+    onError: (error) => {
+      toast.error(`Error reordering clips: ${error.message}`);
+    },
+  });
+
+  const handleReorderClipsVideo = useMutation({
     mutationFn: ({ video_id, clip_ids }: { video_id: string, clip_ids: string[] }) => reorderClips(video_id, clip_ids),
     onSuccess: () => {
       toast.success("Clips reordered successfully.");
@@ -73,7 +90,7 @@ export default function Timeline({ clips, videoDuration, activeVideo }: Timeline
   });
 
   const handleMoveClip = useCallback((clipId: string, direction: 'up' | 'down') => {
-    if (!activeVideo) return;
+    if (!isGlobalTimeline && !activeVideo) return;
     const currentOrder = timelineClips.findIndex(c => c.id === clipId);
     if (currentOrder === -1) return;
 
@@ -93,9 +110,13 @@ export default function Timeline({ clips, videoDuration, activeVideo }: Timeline
     setTimelineClips(newTimelineClips);
 
     const newClipIdsOrder = newTimelineClips.map(c => c.id);
-    handleReorderClips.mutate({ video_id: activeVideo.id, clip_ids: newClipIdsOrder });
+    if (isGlobalTimeline) {
+      handleReorderClipsGlobal.mutate(newClipIdsOrder);
+    } else if (activeVideo) {
+      handleReorderClipsVideo.mutate({ video_id: activeVideo.id, clip_ids: newClipIdsOrder });
+    }
 
-  }, [timelineClips, activeVideo, handleReorderClips]);
+  }, [timelineClips, activeVideo, handleReorderClipsGlobal, handleReorderClipsVideo, isGlobalTimeline]);
 
   const handleTrimClip = useCallback((clipId: string, type: 'start' | 'end', newValue: number) => {
     if (!activeVideo) return;
@@ -145,41 +166,24 @@ export default function Timeline({ clips, videoDuration, activeVideo }: Timeline
   
   const totalTimelineDuration = calculateTotalTimelineDuration();
 
-  const getThumbnailClipStyle = useCallback((clip: ClipOut, isHovered: boolean, isSelected: boolean) => {
-    if (!activeVideo?.thumbnail_strip_url || !activeVideo.duration || activeVideo.duration === 0) {
+  const getThumbnailClipStyle = useCallback((clip: ClipOut | ClipWithVideoOut, isHovered: boolean, isSelected: boolean) => {
+    // Determine the video info source
+    const videoInfo = isGlobalTimeline ? 
+      ('video' in clip ? clip.video : null) : 
+      activeVideo;
+
+    if (!videoInfo?.thumbnail_strip_url || !videoInfo.duration || videoInfo.duration === 0) {
       return {};
     }
 
-    // Calculate representative time for this clip (midpoint between start and end)
-    const clipMidpoint = (clip.start_time + clip.end_time) / 2;
-    const frameIndex = Math.floor(clipMidpoint / THUMBNAIL_FRAME_INTERVAL);
-    
-    // Calculate number of frames in the strip and frame width
-    const totalFrames = Math.ceil(activeVideo.duration / THUMBNAIL_FRAME_INTERVAL);
-    
-    // Use a fixed frame width that matches common video aspect ratios
-    // For a 80px height timeline, 16:9 frames would be ~142px wide
-    const frameWidth = THUMBNAIL_STRIP_HEIGHT * (16 / 9); // 80 * (16/9) = ~142px
-    
-    // Calculate background-position-x to "scroll" the strip to the correct frame
-    // This shows the frame from the source video at the clip's midpoint time
-    const backgroundPositionX = -(frameIndex * frameWidth);
-
-    // Debug logging (remove in production)
-    console.log(`Clip ${clip.id}: start=${clip.start_time}, end=${clip.end_time}, midpoint=${clipMidpoint}, frameIndex=${frameIndex}, bgPos=${backgroundPositionX}`);
-
-    // The thumbnail should show only the content of this specific clip
-    // Calculate what portion of the total strip this clip represents
-    const clipDuration = clip.end_time - clip.start_time;
-    const clipStartPercent = (clip.start_time / activeVideo.duration) * 100;
-    const clipLengthPercent = (clipDuration / activeVideo.duration) * 100;
+    // Use clip-specific thumbnail that shows actual IN/OUT point frame
+    const clipThumbnailUrl = `http://localhost:8000/static/thumbnails/clip_${clip.id}.jpg`;
 
     return {
-      backgroundImage: `url(${activeVideo.thumbnail_strip_url})`,
-      // Scale the strip so that the clip's portion fills the entire thumbnail area
-      backgroundSize: `${(activeVideo.duration / clipDuration) * 100}% 100%`,
-      // Position to show the specific segment of the video for this clip
-      backgroundPosition: `${-clipStartPercent * (activeVideo.duration / clipDuration)}% center`,
+      backgroundImage: `url(${clipThumbnailUrl})`,
+      // Cover the entire clip with the specific thumbnail
+      backgroundSize: 'cover',
+      backgroundPosition: 'center',
       backgroundRepeat: 'no-repeat',
       filter: 'brightness(0.7)', // Slightly dim thumbnail to make text readable
       transition: 'transform 0.1s ease-out, filter 0.1s ease-out, z-index 0.1s', // Smooth transition for hover
@@ -187,19 +191,34 @@ export default function Timeline({ clips, videoDuration, activeVideo }: Timeline
       zIndex: isHovered ? 11 : (isSelected ? 5 : 1), // Bring hovered clip to front, selected secondary
       overflow: 'hidden', // Ensure background doesn't bleed outside clip boundary
     };
-  }, [activeVideo, hoveredClipId, selectedClipId]);
+  }, [activeVideo, hoveredClipId, selectedClipId, isGlobalTimeline]);
 
 
-  const handleClipClick = useCallback((clip: ClipOut) => {
+  const handleClipClick = useCallback((clip: ClipOut | ClipWithVideoOut) => {
     setSelectedClipId(clip.id);
+    
+    // For global timeline, delegate to parent to handle video switching
+    if (isGlobalTimeline && 'video' in clip && onClipPlay) {
+      onClipPlay(clip);
+      return;
+    }
+    
+    // For single-video timeline, just seek and play
     setPlayerCurrentTime(clip.start_time); // Seek video player to clip start
     setIsPlaying(true); // Start playing from clip start
-  }, [setSelectedClipId, setPlayerCurrentTime, setIsPlaying]);
+  }, [setSelectedClipId, setPlayerCurrentTime, setIsPlaying, isGlobalTimeline, onClipPlay]);
 
 
   return (
-    <div style={{ marginTop: "24px", width: "100%", maxWidth: "800px", margin: "0 auto" }}>
-      <h2>Timeline</h2>
+    <div style={{ marginTop: "24px", width: "100%", maxWidth: "1000px", margin: "0 auto" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
+        <h2>🎞️ Timeline</h2>
+        {isGlobalTimeline && timelineClips.length > 0 && (
+          <div style={{ fontSize: "14px", color: "#bbb" }}>
+            💡 Click clips to play them | {timelineClips.length} clips from {new Set(timelineClips.map(c => 'video' in c ? c.video.id : 'unknown')).size} videos
+          </div>
+        )}
+      </div>
       <div
         ref={timelineRef}
         style={{

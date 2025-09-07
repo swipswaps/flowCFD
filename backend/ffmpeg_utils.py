@@ -19,10 +19,28 @@ def ffprobe_duration(path: str) -> float | None:
     except Exception:
         return None
 
-def generate_thumbnail(video_path: str, output_thumbnail_path: str, time_offset: float = 1.0) -> bool:
+def generate_thumbnail(video_path: str, output_thumbnail_path: str, time_offset: float = None) -> bool:
     """
     Generates a single thumbnail for a video at a specific time offset.
+    If time_offset is None, uses 10% of video duration for better uniqueness.
     """
+    if time_offset is None:
+        # Use video filename hash to create deterministic but unique offsets
+        import hashlib
+        import os
+        
+        duration = ffprobe_duration(video_path)
+        if duration and duration > 1.0:
+            # Create a hash from the video filename for deterministic uniqueness
+            filename = os.path.basename(video_path)
+            hash_obj = hashlib.md5(filename.encode())
+            hash_int = int(hash_obj.hexdigest()[:8], 16)  # Use first 8 chars as int
+            # Convert hash to percentage between 15% and 85% of video duration
+            percentage = 0.15 + (hash_int % 1000) / 1000.0 * 0.7  # 15% to 85%
+            time_offset = min(duration * percentage, duration - 0.5)
+        else:
+            time_offset = 0.5  # Fallback for very short videos
+    
     cmd = [
         "ffmpeg", "-y",
         "-ss", str(time_offset),
@@ -30,13 +48,39 @@ def generate_thumbnail(video_path: str, output_thumbnail_path: str, time_offset:
         "-vframes", "1",
         "-q:v", "2", # quality (2 is good)
         "-f", "image2",
+        "-pix_fmt", "yuvj420p",  # Force compatible pixel format
         output_thumbnail_path
     ]
     try:
         subprocess.run(cmd, check=True, capture_output=True)
         return True
     except subprocess.CalledProcessError as e:
-        print(f"Error generating thumbnail: {e.stderr}")
+        print(f"Error generating thumbnail: {e}")
+        return False
+
+def generate_clip_thumbnail(video_path: str, output_thumbnail_path: str, start_time: float, end_time: float) -> bool:
+    """
+    Generates a thumbnail specifically for a clip's time range.
+    Uses the midpoint of the clip's start/end time for a representative frame.
+    """
+    clip_midpoint = (start_time + end_time) / 2
+    
+    cmd = [
+        "ffmpeg", "-y",
+        "-ss", str(clip_midpoint),
+        "-i", video_path,
+        "-vframes", "1",
+        "-q:v", "2",
+        "-f", "image2",
+        "-pix_fmt", "yuvj420p",
+        output_thumbnail_path
+    ]
+    
+    try:
+        subprocess.run(cmd, check=True, capture_output=True)
+        return True
+    except subprocess.CalledProcessError as e:
+        print(f"Error generating clip thumbnail: {e}")
         return False
 
 def generate_thumbnail_strip(video_path: str, output_strip_path: str, frame_interval_seconds: int = 5, strip_height: int = 80) -> bool:
@@ -87,6 +131,18 @@ def generate_thumbnail_strip(video_path: str, output_strip_path: str, frame_inte
             return False
             
         num_frames = len(generated_frames)
+        
+        # Handle case where only one frame was generated
+        if num_frames == 1:
+            try:
+                # Simply copy the single frame as the strip
+                shutil.copy2(generated_frames[0], output_strip_path)
+                return True
+            except Exception as e:
+                print(f"Error copying single frame for thumbnail strip: {e}")
+                return False
+        
+        # Multiple frames - use hstack
         hstack_inputs = []
         for frame_file in generated_frames:
             hstack_inputs.extend(['-i', frame_file])

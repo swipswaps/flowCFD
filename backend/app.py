@@ -1,7 +1,7 @@
 import os
 import shutil
 import asyncio
-from fastapi import FastAPI, UploadFile, HTTPException, Depends, WebSocket, Header, Query
+from fastapi import FastAPI, UploadFile, HTTPException, Depends, WebSocket, Header, Query, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 # OAuth2PasswordBearer, OAuth2PasswordRequestForm removed - no auth module
@@ -75,12 +75,55 @@ def get_static_url(path: str) -> str:
         # Fallback for any other case, though it shouldn't be hit with the current structure
         return f"{settings.BASE_URL}/static/{path.replace('store/', '', 1)}"
 
+# --- Background Tasks ---
+def generate_video_thumbnails(video_id: str, file_path: str):
+    """
+    Background task to generate thumbnails and update video duration.
+    """
+    db = SessionLocal()
+    try:
+        # Get video from database
+        db_video = db.query(models.Video).filter(models.Video.id == video_id).first()
+        if not db_video:
+            print(f"Video {video_id} not found for thumbnail generation")
+            return
+            
+        # Get actual duration using ffprobe
+        duration = ffmpeg_utils.ffprobe_duration(file_path)
+        if duration:
+            db_video.duration = duration
+        
+        # Generate thumbnail strip
+        thumbnail_strip_filename = f"{video_id}_strip.jpg"
+        thumbnail_strip_path = os.path.join(THUMBNAILS_DIR, thumbnail_strip_filename)
+        
+        if ffmpeg_utils.generate_thumbnail_strip(file_path, thumbnail_strip_path):
+            db_video.thumbnail_strip_url = get_static_url(thumbnail_strip_path)
+            print(f"Generated thumbnail strip for video {video_id}")
+        else:
+            print(f"Failed to generate thumbnail strip for video {video_id}")
+            
+        # Generate single thumbnail for preview
+        thumbnail_filename = f"{video_id}.jpg"
+        thumbnail_path = os.path.join(THUMBNAILS_DIR, thumbnail_filename)
+        
+        if ffmpeg_utils.generate_thumbnail(file_path, thumbnail_path):
+            db_video.thumbnail_url = get_static_url(thumbnail_path)
+            print(f"Generated thumbnail for video {video_id}")
+        
+        db.commit()
+        
+    except Exception as e:
+        print(f"Error generating thumbnails for video {video_id}: {e}")
+    finally:
+        db.close()
+
 # --- Auth Endpoints Removed (no auth module) ---
 
 # --- API Endpoints ---
 
 @app.post("/api/videos/upload", response_model=schemas.VideoOut)
-async def upload_video(file: UploadFile, db: Session = Depends(get_db)):
+async def upload_video(file: UploadFile, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     """
     Handles video file uploads, saves the file with a secure name,
     generates thumbnails, and creates a corresponding entry in the database.
@@ -97,22 +140,63 @@ async def upload_video(file: UploadFile, db: Session = Depends(get_db)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to save file: {e}")
 
-    # Use fast duration estimate to reduce upload time
-    duration = 10.0  # Default estimate - will be updated if needed
+    # Get actual duration for immediate response
+    duration = ffmpeg_utils.ffprobe_duration(file_path) or 0.0
 
-    # Create database entry - thumbnails will be generated in background
+    # Create database entry with initial values
     db_video = models.Video(
         id=video_id,
         filename=file.filename,
         path=file_path,
         duration=duration,
-        thumbnail_strip_url=""  # Empty string instead of None for now
+        thumbnail_strip_url=""  # Will be updated by background task
     )
     db.add(db_video)
     db.commit()
     db.refresh(db_video)
     
+    # Generate thumbnails in background
+    background_tasks.add_task(generate_video_thumbnails, video_id, file_path)
+    
     return db_video
+
+@app.post("/api/videos/{video_id}/regenerate-thumbnails")
+async def regenerate_thumbnails(video_id: str, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    """
+    Manually trigger thumbnail regeneration for an existing video.
+    """
+    db_video = db.query(models.Video).filter(models.Video.id == video_id).first()
+    if not db_video:
+        raise HTTPException(status_code=404, detail="Video not found")
+    
+    if not os.path.exists(db_video.path):
+        raise HTTPException(status_code=400, detail="Video file not found")
+        
+    # Generate thumbnails in background
+    background_tasks.add_task(generate_video_thumbnails, video_id, db_video.path)
+    
+    return {"message": "Thumbnail regeneration started", "video_id": video_id}
+
+@app.post("/api/clips/regenerate-all-thumbnails")
+def regenerate_all_clip_thumbnails(db: Session = Depends(get_db)):
+    """
+    Regenerate thumbnails for ALL existing clips.
+    """
+    clips = db.query(models.Clip).join(models.Video).all()
+    count = 0
+    
+    for clip in clips:
+        clip_thumbnail_filename = f"clip_{clip.id}.jpg"
+        clip_thumbnail_path = os.path.join(THUMBNAILS_DIR, clip_thumbnail_filename)
+        
+        # Generate clip thumbnail
+        if ffmpeg_utils.generate_clip_thumbnail(clip.video.path, clip_thumbnail_path, clip.start_time, clip.end_time):
+            print(f"Generated clip thumbnail for clip {clip.id}")
+            count += 1
+        else:
+            print(f"Failed to generate clip thumbnail for clip {clip.id}")
+    
+    return {"message": f"Generated thumbnails for {count} clips"}
 
 @app.get("/api/videos/{video_id}", response_model=schemas.VideoOut)
 def get_video(video_id: str, db: Session = Depends(get_db)):
@@ -122,6 +206,7 @@ def get_video(video_id: str, db: Session = Depends(get_db)):
     
     video_out = schemas.VideoOut.from_orm(db_video)
     video_out.url = get_static_url(db_video.path)
+    video_out.thumbnail_url = f"http://localhost:8000/static/thumbnails/{db_video.id}.jpg"
     return video_out
 
 @app.post("/api/clips/mark", response_model=schemas.ClipOut)
@@ -133,10 +218,29 @@ def mark_clip(clip: schemas.ClipIn, db: Session = Depends(get_db)):
     if not db_video:
         raise HTTPException(status_code=404, detail="Video not found")
     
-    db_clip = models.Clip(**clip.dict())
+    # Get the next global order index (highest existing order_index + 1)
+    max_order = db.query(models.Clip).with_entities(models.Clip.order_index).order_by(models.Clip.order_index.desc()).first()
+    next_order_index = (max_order[0] + 1) if max_order and max_order[0] is not None else 0
+    
+    db_clip = models.Clip(
+        video_id=clip.video_id,
+        start_time=clip.start_time,
+        end_time=clip.end_time,
+        order_index=next_order_index  # Use global ordering
+    )
     db.add(db_clip)
     db.commit()
     db.refresh(db_clip)
+    
+    # Generate clip-specific thumbnail
+    clip_thumbnail_filename = f"clip_{db_clip.id}.jpg"
+    clip_thumbnail_path = os.path.join(THUMBNAILS_DIR, clip_thumbnail_filename)
+    
+    if ffmpeg_utils.generate_clip_thumbnail(db_video.path, clip_thumbnail_path, clip.start_time, clip.end_time):
+        print(f"Generated clip thumbnail for clip {db_clip.id}")
+    else:
+        print(f"Failed to generate clip thumbnail for clip {db_clip.id}")
+    
     return db_clip
 
 @app.get("/api/videos/{video_id}/exports/latest")
@@ -153,7 +257,7 @@ def get_latest_active_export(video_id: str, db: Session = Depends(get_db)):
 
         if not latest_export:
             return {"status": "none", "message": "No active exports"}
-            
+        
         return {"status": "active", "export": latest_export}
     except Exception as e:
         print(f"Error in get_latest_active_export: {e}")
@@ -165,7 +269,47 @@ def list_clips(video_id: str, db: Session = Depends(get_db)):
     clips = db.query(models.Clip).filter(models.Clip.video_id == video_id).order_by(models.Clip.order_index).all()
     return clips
 
-@app.delete("/api/clips/{clip_id}", status_code=204)
+# NEW: Global timeline endpoints
+@app.get("/api/timeline/clips", response_model=List[schemas.ClipWithVideoOut])
+def list_timeline_clips(db: Session = Depends(get_db)):
+    """Get all clips across all videos for the global timeline, ordered by order_index"""
+    clips = db.query(models.Clip).join(models.Video).order_by(models.Clip.order_index).all()
+    return [
+        schemas.ClipWithVideoOut(
+            id=clip.id,
+            video_id=clip.video_id,
+            start_time=clip.start_time,
+            end_time=clip.end_time,
+            order_index=clip.order_index,
+            video=schemas.VideoOut(
+                id=clip.video.id,
+                filename=clip.video.filename,
+                duration=clip.video.duration,
+                thumbnail_url=f"http://localhost:8000/static/thumbnails/{clip.video.id}.jpg" if clip.video.id else None,
+                thumbnail_strip_url=clip.video.thumbnail_strip_url,
+                created_at=clip.video.created_at
+            )
+        )
+        for clip in clips
+    ]
+
+@app.get("/api/videos", response_model=List[schemas.VideoOut])
+def list_videos(db: Session = Depends(get_db)):
+    """Get all uploaded videos"""
+    videos = db.query(models.Video).order_by(models.Video.created_at.desc()).all()
+    return [
+        schemas.VideoOut(
+            id=video.id,
+            filename=video.filename,
+            duration=video.duration,
+            thumbnail_url=f"http://localhost:8000/static/thumbnails/{video.id}.jpg" if video.id else None,
+            thumbnail_strip_url=video.thumbnail_strip_url,
+            created_at=video.created_at
+        )
+        for video in videos
+    ]
+
+@app.delete("/api/clips/{clip_id}")
 def delete_clip(clip_id: str, db: Session = Depends(get_db)):
     """
     Deletes a clip from the database.
@@ -176,7 +320,7 @@ def delete_clip(clip_id: str, db: Session = Depends(get_db)):
     
     db.delete(db_clip)
     db.commit()
-    return
+    return {"message": "Clip deleted successfully"}
 
 @app.post("/api/clips/reorder/{video_id}", response_model=List[schemas.ClipOut])
 def reorder_clips(video_id: str, clip_ids: List[str], db: Session = Depends(get_db)):
@@ -213,6 +357,51 @@ def reorder_clips(video_id: str, clip_ids: List[str], db: Session = Depends(get_
     # Return the reordered clips
     reordered_clips = sorted(db_clips, key=lambda c: c.order_index)
     return reordered_clips
+
+# NEW: Global timeline reorder
+@app.post("/api/timeline/reorder", response_model=List[schemas.ClipWithVideoOut])
+def reorder_timeline_clips(clip_ids: List[str], db: Session = Depends(get_db)):
+    """
+    Reorders clips globally across all videos for the timeline.
+    The order of clip IDs determines the new global order.
+    """
+    # Get all clips that match the provided IDs
+    clips = db.query(models.Clip).filter(models.Clip.id.in_(clip_ids)).all()
+    
+    if len(clips) != len(clip_ids):
+        raise HTTPException(status_code=400, detail="Some clips do not exist")
+    
+    # Create a mapping of clip_id to clip object
+    clip_map = {clip.id: clip for clip in clips}
+    
+    # Update order_index for each clip based on the order in clip_ids
+    for new_index, clip_id in enumerate(clip_ids):
+        if clip_id in clip_map:
+            clip_map[clip_id].order_index = new_index
+    
+    db.commit()
+    
+    # Return the updated clips in their new order with video info
+    result = []
+    for clip_id in clip_ids:
+        if clip_id in clip_map:
+            clip = clip_map[clip_id]
+            result.append(schemas.ClipWithVideoOut(
+                id=clip.id,
+                video_id=clip.video_id,
+                start_time=clip.start_time,
+                end_time=clip.end_time,
+                order_index=clip.order_index,
+                video=schemas.VideoOut(
+                    id=clip.video.id,
+                    filename=clip.video.filename,
+                    duration=clip.video.duration,
+                    thumbnail_url=f"http://localhost:8000/static/thumbnails/{clip.video.id}.jpg" if clip.video.id else None,
+                    thumbnail_strip_url=clip.video.thumbnail_strip_url,
+                    created_at=clip.video.created_at
+                )
+            ))
+    return result
 
 @app.post("/api/projects/build")
 def build_project(video_id: str = Query(...), db: Session = Depends(get_db)):

@@ -16,6 +16,15 @@ export type ClipOut = {
   order_index: number;
 };
 
+export type ClipWithVideoOut = {
+  id: string;
+  video_id: string;
+  start_time: number;
+  end_time: number;
+  order_index: number;
+  video: VideoOut;
+};
+
 export type ExportOut = {
   id: string;
   video_id: string;
@@ -112,6 +121,33 @@ export async function updateClip(clip_id: string, input: {
 
 export async function reorderClips(video_id: string, clip_ids: string[]): Promise<ClipOut[]> {
   const res = await fetch(`/api/clips/reorder/${video_id}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${authToken}` },
+    body: JSON.stringify(clip_ids)
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+// NEW: Multi-video timeline functions
+export async function getTimelineClips(): Promise<ClipWithVideoOut[]> {
+  const res = await fetch(`/api/timeline/clips`, {
+    headers: { Authorization: `Bearer ${authToken}` }
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function getVideos(): Promise<VideoOut[]> {
+  const res = await fetch(`/api/videos`, {
+    headers: { Authorization: `Bearer ${authToken}` }
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function reorderTimelineClips(clip_ids: string[]): Promise<ClipWithVideoOut[]> {
+  const res = await fetch(`/api/timeline/reorder`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${authToken}` },
     body: JSON.stringify(clip_ids)

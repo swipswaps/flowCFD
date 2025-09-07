@@ -5,7 +5,8 @@ import {
   uploadVideo, getVideo, VideoOut,
   markClip, listClips, ClipOut,
   buildProject, startExport, getExportStatus, openExportWebSocket,
-  getLatestActiveExport // NEW
+  getLatestActiveExport, // NEW
+  getTimelineClips, getVideos, ClipWithVideoOut // NEW: Multi-video timeline
 } from "../api/client";
 import { useEditorStore } from "../stores/editorStore";
 import VideoPlayer from "../components/VideoPlayer";
@@ -19,9 +20,12 @@ export default function Editor() {
     activeVideoId,
     setActiveVideoId,
     playerCurrentTime,
+    setPlayerCurrentTime,
     playerDuration,
     markedIn,
     markedOut,
+    setMarkedIn,
+    setMarkedOut,
     clearMarks,
     setIsPlaying
   } = useEditorStore();
@@ -32,10 +36,16 @@ export default function Editor() {
     enabled: !!activeVideoId,
   });
 
-  const { data: clips = [], isLoading: isLoadingClips, refetch: refetchClips } = useQuery<ClipOut[]>({
-    queryKey: ["clips", activeVideoId],
-    queryFn: () => activeVideoId ? listClips(activeVideoId) : Promise.resolve([]),
-    enabled: !!activeVideoId,
+  // NEW: Global timeline clips (from all videos)
+  const { data: timelineClips = [], isLoading: isLoadingClips, refetch: refetchTimelineClips } = useQuery<ClipWithVideoOut[]>({
+    queryKey: ["timeline-clips"],
+    queryFn: getTimelineClips,
+  });
+
+  // NEW: All available videos
+  const { data: videos = [], refetch: refetchVideos } = useQuery<VideoOut[]>({
+    queryKey: ["videos"],
+    queryFn: getVideos,
   });
 
   const [exportId, setExportId] = React.useState<string | null>(null);
@@ -50,9 +60,10 @@ export default function Editor() {
     onSuccess: (v) => {
       toast.dismiss();
       toast.success(`Video "${v.filename}" uploaded.`);
+      // Set uploaded video as active (users expect this behavior)
       setActiveVideoId(v.id);
+      qc.invalidateQueries({ queryKey: ["videos"] });
       qc.invalidateQueries({ queryKey: ["video", v.id] });
-      qc.invalidateQueries({ queryKey: ["clips", v.id] });
       setExportId(null);
       setExportStatus({progress:0, status:"idle"});
       clearMarks();
@@ -72,7 +83,7 @@ export default function Editor() {
     onSuccess: () => {
       toast.dismiss();
       toast.success("Clip added successfully.");
-      refetchClips();
+      refetchTimelineClips(); // NEW: Refresh global timeline clips
       clearMarks();
     },
     onError: (error) => {
@@ -105,10 +116,10 @@ export default function Editor() {
       (async () => {
         try {
           const activeExportResponse = await getLatestActiveExport(activeVideoId);
-          if (activeExportResponse && activeExportResponse.status === "active" && activeExportResponse.export) {
+          if (activeExportResponse && (activeExportResponse.status === "queued" || activeExportResponse.status === "processing")) {
             toast.success("Resumed monitoring an in-progress export.");
-            setExportId(activeExportResponse.export.id);
-            monitorExport(activeExportResponse.export.id);
+            setExportId(activeExportResponse.id);
+            monitorExport(activeExportResponse.id);
           }
         } catch (error) {
           console.error("Error checking for active exports:", error);
@@ -193,16 +204,29 @@ export default function Editor() {
       video_id: activeVideoId,
       start_time: markedIn,
       end_time: markedOut,
-      order_index: clips.length,
+      order_index: timelineClips.length,
     });
   };
+
+  // NEW: Handle clip playback from timeline
+  const handleClipPlay = useCallback((clip: ClipWithVideoOut) => {
+    // Switch to the clip's video
+    setActiveVideoId(clip.video.id);
+    
+    // Set player to clip range and start playing
+    setPlayerCurrentTime(clip.start_time);
+    setIsPlaying(true);
+    
+    // TODO: Add clip end-time handling to stop at clip.end_time
+    console.log(`Playing clip from ${clip.video.filename}: ${clip.start_time}s - ${clip.end_time}s`);
+  }, [setActiveVideoId, setPlayerCurrentTime, setIsPlaying]);
 
   const handleBuildProject = () => {
     if (!activeVideoId) {
       toast.error("Please upload a video first.");
       return;
     }
-    if (clips.length === 0) {
+    if (timelineClips.length === 0) {
       toast.error("No clips defined. Add clips to the timeline before building the project.");
       return;
     }
@@ -214,7 +238,7 @@ export default function Editor() {
       toast.error("Please upload a video first.");
       return;
     }
-    if (clips.length === 0) {
+    if (timelineClips.length === 0) {
       toast.error("No clips defined. Add clips and build the project before exporting.");
       return;
     }
@@ -237,67 +261,121 @@ export default function Editor() {
 
   return (
     <div className="editor-container">
-      <h1>CapCut-Lite Editor</h1>
+      <h1>🎬 Video Timeline Editor</h1>
 
       <section className="editor-section">
-        <h2>1) Upload Video</h2>
+        <h2>📁 Media Library</h2>
         <input type="file" accept="video/*" onChange={handleFileUpload} disabled={upload.isPending} />
         {upload.isPending && <p>Uploading...</p>}
+        
+        {/* NEW: Video Selection */}
+        {videos.length > 0 && (
+          <div className="video-selection">
+            <h3>Available Videos:</h3>
+            <div className="video-list">
+              {videos.map((video) => (
+                <div 
+                  key={video.id} 
+                  className={`video-item ${activeVideoId === video.id ? 'active' : ''}`}
+                  onClick={() => setActiveVideoId(video.id)}
+                >
+                  {video.thumbnail_url && (
+                    <img src={video.thumbnail_url} alt="Video Thumbnail" />
+                  )}
+                  <div className="video-info">
+                    <p><b>{video.filename}</b></p>
+                    <p>Duration: {formatTime(video.duration ?? 0)}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        
         {activeVideo && (
-          <div className="upload-info">
-            {activeVideo.thumbnail_url && (
-                <img src={activeVideo.thumbnail_url} alt="Video Thumbnail" />
-            )}
-            <div className="upload-info-meta">
-                <p><b>{activeVideo.filename}</b></p>
-                <p>Duration: {formatTime(activeVideo.duration || 0)}</p>
-                <p className="video-id">ID: {activeVideo.id}</p>
+          <div className="active-video-info">
+            <h3>Current Video for Marking:</h3>
+            <div className="upload-info">
+              {activeVideo.thumbnail_url && (
+                  <img src={activeVideo.thumbnail_url} alt="Video Thumbnail" />
+              )}
+              <div className="upload-info-meta">
+                  <p><b>{activeVideo.filename}</b></p>
+                  <p>Duration: {formatTime(activeVideo.duration || 0)}</p>
+                  <p className="video-id">ID: {activeVideo.id}</p>
+              </div>
             </div>
           </div>
         )}
       </section>
 
       <section className="editor-section">
-        <h2>2) Video Player & Clip Marking</h2>
+        <h2>🎬 Video Player & Clip Marking</h2>
         {isLoadingVideo ? (
           <div>Loading video...</div>
         ) : activeVideo ? (
-          <VideoPlayer videoUrl={activeVideo.url} videoDuration={activeVideo.duration} />
+          <VideoPlayer videoUrl={activeVideo.url ?? ""} videoDuration={activeVideo.duration ?? 0} />
         ) : (
-          <div>No video selected</div>
+          <div className="no-video-message">
+            <p>👈 Select a video from the library above to start editing</p>
+          </div>
         )}
-        <div className="marking-controls">
-            <button 
-                onClick={handleAddClip} 
-                className="btn"
-                disabled={!activeVideoId || markedIn === null || markedOut === null || markedOut <= markedIn || (activeVideo && markedOut > activeVideo.duration!) || addClip.isPending}
-            >
-                {addClip.isPending ? "Adding..." : "Add Clip to Timeline"}
-            </button>
-            <p className="marks-display">
-              Current Marks: IN: {markedIn !== null ? formatTime(markedIn) : "--:--:--"} | OUT: {markedOut !== null ? formatTime(markedOut) : "--:--:--"}
-            </p>
-        </div>
+        
+        {activeVideo && (
+          <div className="marking-controls">
+              <button 
+                  onClick={() => setMarkedIn(playerCurrentTime)}
+                  className="btn"
+                  disabled={!activeVideo}
+              >
+                  📍 Mark IN ({markedIn !== null ? formatTime(markedIn) : "--:--"})
+              </button>
+              <button 
+                  onClick={() => setMarkedOut(playerCurrentTime)}
+                  className="btn"
+                  disabled={!activeVideo}
+              >
+                  📍 Mark OUT ({markedOut !== null ? formatTime(markedOut) : "--:--"})
+              </button>
+              <button 
+                  onClick={handleAddClip} 
+                  className="btn"
+                  disabled={!activeVideoId || markedIn === null || markedOut === null || markedOut <= markedIn || (activeVideo && markedOut > activeVideo.duration!) || addClip.isPending}
+              >
+                  {addClip.isPending ? "Adding..." : "➕ Add to Timeline"}
+              </button>
+              <div className="marks-display">
+                Current: {formatTime(playerCurrentTime)} | 
+                Range: {markedIn !== null ? formatTime(markedIn) : "--:--"} to {markedOut !== null ? formatTime(markedOut) : "--:--"}
+              </div>
+          </div>
+        )}
       </section>
 
       <section className="editor-section">
-        <Timeline clips={clips} videoDuration={activeVideo?.duration || 0} activeVideo={activeVideo} />
+        <Timeline 
+          clips={timelineClips} 
+          videoDuration={activeVideo?.duration || 0} 
+          activeVideo={activeVideo ?? null}
+          isGlobalTimeline={true}
+          onClipPlay={handleClipPlay}
+        />
       </section>
 
       <section className="editor-section">
-        <h2>3) Build Project & Export</h2>
+        <h2>🚀 Export Project</h2>
         <div className="export-controls">
             <button
                 onClick={handleBuildProject}
                 className="btn"
-                disabled={!activeVideoId || clips.length === 0 || buildProjectMutation.isPending}
+                disabled={!activeVideoId || timelineClips.length === 0 || buildProjectMutation.isPending}
             >
                 {buildProjectMutation.isPending ? "Building..." : "Build .osp Project"}
             </button>
             <button
                 onClick={handleStartExport}
                 className="btn"
-                disabled={!activeVideoId || clips.length === 0 || startExportMutation.isPending}
+                disabled={!activeVideoId || timelineClips.length === 0 || startExportMutation.isPending}
             >
                 {startExportMutation.isPending ? "Starting Export..." : "Start Export"}
             </button>

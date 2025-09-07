@@ -47,6 +47,17 @@ class ClipOut(BaseModel):
     class Config:
         from_attributes = True
 
+class ClipWithVideoOut(BaseModel):
+    """Clip with embedded video information for global timeline"""
+    id: str
+    video_id: str
+    start_time: float
+    end_time: float
+    order_index: int
+    video: VideoOut
+    class Config:
+        from_attributes = True
+
 class ExportStartIn(BaseModel):
     video_id: str
     # optional export settings in future
