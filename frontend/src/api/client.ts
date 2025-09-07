@@ -174,7 +174,13 @@ export async function clearTimeline(): Promise<{ message: string }> {
   return res.json();
 }
 
-export async function buildProject(video_id: string): Promise<{ video_id: string; osp: string }> {
+export async function buildProject(video_id: string): Promise<{ 
+  message: string; 
+  output_file: string; 
+  output_path: string; 
+  clips_count: number; 
+  download_url: string; 
+}> {
   const res = await fetch(`/api/projects/build?video_id=${encodeURIComponent(video_id)}`, {
     method: "POST",
     headers: { 

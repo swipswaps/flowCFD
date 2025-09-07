@@ -418,9 +418,76 @@ def reorder_timeline_clips(clip_ids: List[str], db: Session = Depends(get_db)):
 @app.post("/api/projects/build")
 def build_project(video_id: str = Query(...), db: Session = Depends(get_db)):
     """
-    Build project endpoint - temporarily disabled (missing OpenShot integration)
+    Build project from timeline clips using FFmpeg.
     """
-    raise HTTPException(status_code=501, detail="Project building is not yet implemented. This feature would require OpenShot integration or custom video processing logic.")
+    import uuid
+    from datetime import datetime
+    
+    # Get all timeline clips in order
+    timeline_clips = db.query(models.Clip).join(models.Video).order_by(models.Clip.order_index.asc()).all()
+    
+    if not timeline_clips:
+        raise HTTPException(status_code=400, detail="No clips found in timeline to build")
+    
+    # Prepare clips data for FFmpeg
+    clips_data = []
+    for clip in timeline_clips:
+        # Convert relative path to absolute path
+        video_path = clip.video.path
+        if not os.path.isabs(video_path):
+            video_path = os.path.abspath(video_path)
+        
+        clips_data.append({
+            'video_path': video_path,
+            'start_time': clip.start_time,
+            'end_time': clip.end_time
+        })
+    
+    # Generate output filename
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    output_filename = f"timeline_build_{timestamp}.mp4"
+    output_path = os.path.join(EXPORTS_DIR, output_filename)
+    
+    # Ensure exports directory exists
+    os.makedirs(EXPORTS_DIR, exist_ok=True)
+    
+    # Build the video using FFmpeg
+    print(f"Building timeline video with {len(clips_data)} clips...")
+    success = ffmpeg_utils.build_timeline_video(clips_data, output_path)
+    
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to build timeline video")
+    
+    # Return the built video info
+    return {
+        "message": "Timeline video built successfully",
+        "output_file": output_filename,
+        "output_path": output_path,
+        "clips_count": len(clips_data),
+        "download_url": f"/api/projects/download/{output_filename}"
+    }
+
+@app.get("/api/projects/download/{filename}")
+def download_project(filename: str):
+    """
+    Download a built project video file.
+    """
+    from fastapi.responses import FileResponse
+    
+    file_path = os.path.join(EXPORTS_DIR, filename)
+    
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="File not found")
+    
+    # Ensure file is within exports directory (security check)
+    if not os.path.realpath(file_path).startswith(os.path.realpath(EXPORTS_DIR)):
+        raise HTTPException(status_code=403, detail="Access denied")
+    
+    return FileResponse(
+        path=file_path,
+        filename=filename,
+        media_type='video/mp4'
+    )
 
 @app.post("/api/exports/start", response_model=schemas.ExportOut)
 def start_export(

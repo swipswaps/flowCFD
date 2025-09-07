@@ -164,33 +164,190 @@ def generate_thumbnail_strip(video_path: str, output_strip_path: str, frame_inte
 
 def extract_clip(src: str, start: float, duration: float, out_path: str) -> bool:
     """
-    Known-to-work pattern for trimming with re-encode for stable concat.
+    Extract a clip from a video with fallback encoder support.
     """
-    cmd = [
+    # Try stream copy first (fastest)
+    cmd_copy = [
         "ffmpeg", "-y",
         "-ss", f"{start}",
         "-t", f"{duration}",
         "-i", src,
-        "-c:v", "libx264",
+        "-c", "copy",
+        "-avoid_negative_ts", "make_zero",
+        out_path
+    ]
+    
+    p = subprocess.run(cmd_copy, capture_output=True, text=True)
+    if p.returncode == 0:
+        return True
+    
+    # Stream copy failed, try with re-encoding using available encoder
+    print(f"Stream copy failed, trying with re-encoding. Error: {p.stderr[-200:] if p.stderr else 'No error message'}")
+    
+    # Try with libopenh264 (common alternative to libx264)
+    cmd_encode = [
+        "ffmpeg", "-y",
+        "-ss", f"{start}",
+        "-t", f"{duration}",
+        "-i", src,
+        "-c:v", "libopenh264",
         "-c:a", "aac",
         "-avoid_negative_ts", "make_zero",
         out_path
     ]
-    p = subprocess.run(cmd, capture_output=True, text=True)
+    
+    p = subprocess.run(cmd_encode, capture_output=True, text=True)
+    if p.returncode == 0:
+        return True
+    
+    print(f"Re-encoding with libopenh264 failed: {p.stderr[-200:] if p.stderr else 'No error message'}")
+    
+    # Last resort: try with default encoder
+    cmd_default = [
+        "ffmpeg", "-y",
+        "-ss", f"{start}",
+        "-t", f"{duration}",
+        "-i", src,
+        "-avoid_negative_ts", "make_zero",
+        out_path
+    ]
+    
+    p = subprocess.run(cmd_default, capture_output=True, text=True)
+    print(f"Default encoding result: {p.returncode}, stderr: {p.stderr[-200:] if p.stderr else 'No error'}")
     return p.returncode == 0
 
 def concat_mp4s(filelist_path: str, output_path: str) -> bool:
     """
-    ffmpeg concat demuxer (file list).
+    ffmpeg concat demuxer (file list) with encoder fallbacks.
     """
-    cmd = [
+    # Try stream copy first (fastest, no quality loss)
+    cmd_copy = [
         "ffmpeg", "-y",
         "-f", "concat", "-safe", "0",
         "-i", filelist_path,
-        "-c:v", "libx264",
+        "-c", "copy",
+        "-movflags", "+faststart",
+        output_path
+    ]
+    
+    p = subprocess.run(cmd_copy, capture_output=True, text=True)
+    if p.returncode == 0:
+        return True
+    
+    print(f"Stream copy concat failed, trying with re-encoding. Error: {p.stderr[-200:] if p.stderr else 'No error message'}")
+    
+    # Try with libopenh264
+    cmd_encode = [
+        "ffmpeg", "-y",
+        "-f", "concat", "-safe", "0",
+        "-i", filelist_path,
+        "-c:v", "libopenh264",
         "-c:a", "aac",
         "-movflags", "+faststart",
         output_path
     ]
-    p = subprocess.run(cmd, capture_output=True, text=True)
+    
+    p = subprocess.run(cmd_encode, capture_output=True, text=True)
+    if p.returncode == 0:
+        return True
+    
+    print(f"Re-encoding concat with libopenh264 failed: {p.stderr[-200:] if p.stderr else 'No error message'}")
+    
+    # Last resort: default encoders
+    cmd_default = [
+        "ffmpeg", "-y",
+        "-f", "concat", "-safe", "0",
+        "-i", filelist_path,
+        "-movflags", "+faststart",
+        output_path
+    ]
+    
+    p = subprocess.run(cmd_default, capture_output=True, text=True)
+    print(f"Default concat result: {p.returncode}, stderr: {p.stderr[-200:] if p.stderr else 'No error'}")
     return p.returncode == 0
+
+def build_timeline_video(clips_data: list, output_path: str, temp_dir: str = None) -> bool:
+    """
+    Build a final video from timeline clips using FFmpeg.
+    
+    Args:
+        clips_data: List of dicts with keys: 'video_path', 'start_time', 'end_time'
+        output_path: Path for the final compiled video
+        temp_dir: Directory for temporary clip files (optional)
+    
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    if not clips_data:
+        print("Error: No clips provided for timeline video build")
+        return False
+    
+    # Use provided temp_dir or create a temporary one
+    cleanup_temp = temp_dir is None
+    if temp_dir is None:
+        temp_dir = tempfile.mkdtemp(prefix="timeline_build_")
+    
+    try:
+        clip_files = []
+        filelist_lines = []
+        
+        # Extract each clip to a temporary file
+        for i, clip in enumerate(clips_data):
+            video_path = clip['video_path']
+            start_time = clip['start_time']
+            end_time = clip['end_time']
+            duration = end_time - start_time
+            
+            if duration <= 0:
+                print(f"Warning: Skipping clip {i} with invalid duration: {duration}")
+                continue
+            
+            # Create temporary clip file
+            clip_filename = f"clip_{i:04d}.mp4"
+            clip_path = os.path.join(temp_dir, clip_filename)
+            
+            print(f"Extracting clip {i}: {start_time}s-{end_time}s from {os.path.basename(video_path)}")
+            
+            # Extract the clip
+            if extract_clip(video_path, start_time, duration, clip_path):
+                clip_files.append(clip_path)
+                # Add to concat filelist (escape path for FFmpeg)
+                escaped_path = clip_path.replace("'", "'\"'\"'")
+                filelist_lines.append(f"file '{escaped_path}'")
+                print(f"Successfully extracted clip {i}")
+            else:
+                print(f"Failed to extract clip {i}")
+                return False
+        
+        if not clip_files:
+            print("Error: No clips were successfully extracted")
+            return False
+        
+        # Create filelist for FFmpeg concat
+        filelist_path = os.path.join(temp_dir, "filelist.txt")
+        with open(filelist_path, 'w') as f:
+            f.write('\n'.join(filelist_lines))
+        
+        print(f"Concatenating {len(clip_files)} clips into final video...")
+        
+        # Concatenate all clips
+        success = concat_mp4s(filelist_path, output_path)
+        
+        if success:
+            print(f"Successfully built timeline video: {output_path}")
+        else:
+            print("Failed to concatenate clips")
+            
+        return success
+        
+    except Exception as e:
+        print(f"Error building timeline video: {e}")
+        return False
+    finally:
+        # Clean up temporary directory if we created it
+        if cleanup_temp and os.path.exists(temp_dir):
+            try:
+                shutil.rmtree(temp_dir)
+                print(f"Cleaned up temporary directory: {temp_dir}")
+            except Exception as e:
+                print(f"Warning: Could not clean up temporary directory {temp_dir}: {e}")

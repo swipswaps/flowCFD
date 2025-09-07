@@ -101,15 +101,26 @@ export default function Editor() {
   const buildProjectMutation = useMutation({
     mutationFn: buildProject,
     onMutate: () => {
-      toast.loading("Building project...");
+      toast.loading("Building timeline video...");
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       toast.dismiss();
-      toast.success("Project built (.osp) successfully!");
+      toast.success(`Timeline video built successfully! ${data.clips_count} clips concatenated.`);
+      
+      // Create download link and trigger download
+      const downloadLink = document.createElement('a');
+      downloadLink.href = data.download_url;
+      downloadLink.download = data.output_file;
+      downloadLink.style.display = 'none';
+      document.body.appendChild(downloadLink);
+      downloadLink.click();
+      document.body.removeChild(downloadLink);
+      
+      console.log("Built video:", data);
     },
     onError: (error) => {
       toast.dismiss();
-      toast.error(`Project build failed: ${error.message}`);
+      toast.error(`Video build failed: ${error.message}`);
     }
   });
 
@@ -395,14 +406,14 @@ export default function Editor() {
       </section>
 
       <section className="editor-section">
-        <h2>🚀 Export Project</h2>
+        <h2>🚀 Build & Export</h2>
         <div className="export-controls">
             <button
                 onClick={handleBuildProject}
                 className="btn"
                 disabled={!activeVideoId || timelineClips.length === 0 || buildProjectMutation.isPending}
             >
-                {buildProjectMutation.isPending ? "Building..." : "Build .osp Project"}
+                {buildProjectMutation.isPending ? "Building..." : "Build Timeline Video"}
             </button>
             <button
                 onClick={handleStartExport}
