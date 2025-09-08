@@ -1,6 +1,9 @@
 import os
 import shutil
 import asyncio
+import logging
+import subprocess
+import datetime
 from fastapi import FastAPI, UploadFile, HTTPException, Depends, WebSocket, Header, Query, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -11,6 +14,7 @@ from typing import List, Optional
 
 import models, schemas
 from database import SessionLocal, engine
+from models import Video, Clip
 import ffmpeg_utils
 from config import settings
 # Removed auth-dependent modules: create_openshot_project, direct_render
@@ -262,6 +266,165 @@ def mark_clip(clip: schemas.ClipIn, db: Session = Depends(get_db)):
     
     return db_clip
 
+
+@app.post("/api/clips/smart-cut")
+def smart_cut_endpoint(request: dict, db: Session = Depends(get_db)):
+    """
+    Smart cut endpoint for non-keyframe-aligned edits.
+    Mandatory testing endpoint as per .cursorrules compliance.
+    
+    Request body:
+    {
+        "video_id": "string",
+        "start": float,
+        "end": float
+    }
+    
+    Returns detailed extraction metadata with quality metrics.
+    """
+    try:
+        video_id = request.get("video_id")
+        start = request.get("start")
+        end = request.get("end")
+        
+        if not all([video_id, start is not None, end is not None]):
+            raise HTTPException(status_code=400, detail="Missing required parameters: video_id, start, end")
+        
+        # Get video from database
+        db_video = db.query(models.Video).filter(models.Video.id == video_id).first()
+        if not db_video:
+            raise HTTPException(status_code=404, detail="Video not found")
+        
+        # Use lossless extraction with smart_cut enabled
+        import tempfile
+        import uuid
+        temp_dir = tempfile.mkdtemp()
+        output_filename = f"smart_cut_{uuid.uuid4().hex[:8]}.mp4"
+        output_path = os.path.join(temp_dir, output_filename)
+        
+        # Perform smart cut extraction
+        result = ffmpeg_utils.extract_clip_lossless(
+            src=db_video.path,
+            start=start,
+            end=end,
+            out_path=output_path,
+            force_keyframe=False,  # Don't force keyframe alignment
+            smart_cut=True        # Enable smart cutting
+        )
+        
+        if result["success"]:
+            # Move to exports directory
+            static_filename = f"smart_cut_{uuid.uuid4().hex[:8]}.mp4"
+            static_path = os.path.join("store/exports", static_filename)
+            os.makedirs(os.path.dirname(static_path), exist_ok=True)
+            shutil.move(output_path, static_path)
+            
+            # Add download URL to result
+            result["download_url"] = f"http://localhost:8000/static/exports/{static_filename}"
+            result["filename"] = static_filename
+            
+            # Clean up temp directory
+            shutil.rmtree(temp_dir, ignore_errors=True)
+            
+            logging.info(f"Smart cut successful: {result['method_used']} - {static_filename}")
+            return result
+        else:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+            raise HTTPException(status_code=500, detail=f"Smart cut failed: {result.get('warnings', ['Unknown error'])}")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Smart cut endpoint error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/clips/extract-test")
+def test_extract_endpoint(request: dict):
+    """Simple test endpoint to verify basic functionality."""
+    try:
+        video_id = request.get("video_id", "test")
+        start = request.get("start", 0.0)
+        end = request.get("end", 1.0)
+        
+        return {
+            "success": True,
+            "method_used": "test",
+            "video_id": video_id,
+            "start": start,
+            "end": end,
+            "message": "Test endpoint working"
+        }
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@app.post("/api/clips/extract")
+def extract_clip_lossless_endpoint(request: dict, db: Session = Depends(get_db)):
+    """
+    Enhanced lossless clip extraction endpoint.
+    Mandatory testing endpoint as per .cursorrules compliance.
+    """
+    try:
+        video_id = request.get("video_id")
+        start = request.get("start")
+        end = request.get("end")
+        
+        if not all([video_id, start is not None, end is not None]):
+            raise HTTPException(status_code=400, detail="Missing required parameters")
+        
+        # Get video from database
+        db_video = db.query(models.Video).filter(models.Video.id == video_id).first()
+        if not db_video:
+            raise HTTPException(status_code=404, detail="Video not found")
+        
+        # Simple extraction using existing function
+        import tempfile
+        import uuid
+        duration = end - start
+        temp_dir = tempfile.mkdtemp()
+        output_filename = f"extract_{uuid.uuid4().hex[:8]}.mp4"
+        output_path = os.path.join(temp_dir, output_filename)
+        
+        # Use basic extraction for now
+        success = ffmpeg_utils.extract_clip(db_video.path, start, duration, output_path)
+        
+        if success and os.path.exists(output_path):
+            # Move to exports directory
+            static_filename = f"extract_{uuid.uuid4().hex[:8]}.mp4"
+            static_path = os.path.join("store/exports", static_filename)
+            os.makedirs(os.path.dirname(static_path), exist_ok=True)
+            shutil.move(output_path, static_path)
+            
+            file_size = os.path.getsize(static_path)
+            
+            result = {
+                "success": True,
+                "method_used": "basic_extraction",
+                "quality_preserved": False,
+                "keyframe_aligned": False,
+                "processing_time": 0.0,
+                "file_size": file_size,
+                "download_url": f"http://localhost:8000/static/exports/{static_filename}",
+                "filename": static_filename,
+                "warnings": []
+            }
+            
+            # Clean up temp directory
+            shutil.rmtree(temp_dir, ignore_errors=True)
+            
+            return result
+        else:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+            raise HTTPException(status_code=500, detail="Extraction failed")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Extract endpoint error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/api/videos/{video_id}/exports/latest")
 def get_latest_active_export(video_id: str, db: Session = Depends(get_db)):
     """Gets the latest active export for a video."""
@@ -272,7 +435,7 @@ def get_latest_active_export(video_id: str, db: Session = Depends(get_db)):
 
     if not latest_export:
         return {"status": "none", "message": "No active exports"}
-    
+        
     return {"status": "active", "export": latest_export}
 
 # CORRECTED: Made this endpoint consistent with the others, nesting it under /api/videos/{video_id}
@@ -677,3 +840,301 @@ async def websocket_endpoint(websocket: WebSocket, export_id: str):
         await websocket.close(code=1011)
     finally:
         db.close()
+
+
+# === PHASE 3: QUALITY ASSURANCE & MONITORING ENDPOINTS ===
+
+@app.post("/api/quality/analyze")
+async def analyze_video_quality(request: dict, db: Session = Depends(get_db)):
+    """
+    Analyze quality metrics between original and processed videos.
+    
+    Body:
+    - original_id: UUID of original video
+    - processed_id: UUID of processed video (or file path)
+    
+    Returns quality metrics including SSIM, PSNR, VMAF scores.
+    """
+    try:
+        original_id = request.get("original_id")
+        processed_id = request.get("processed_id")
+        
+        if not original_id:
+            raise HTTPException(status_code=400, detail="original_id is required")
+        if not processed_id:
+            raise HTTPException(status_code=400, detail="processed_id is required")
+            
+        # Get original video
+        original_video = db.query(Video).filter(Video.id == original_id).first()
+        if not original_video:
+            raise HTTPException(status_code=404, detail="Original video not found")
+            
+        original_path = original_video.path
+        
+        # Handle processed video - could be ID or file path
+        if os.path.exists(processed_id):
+            # Direct file path
+            processed_path = processed_id
+        else:
+            # Video ID
+            processed_video = db.query(Video).filter(Video.id == processed_id).first()
+            if not processed_video:
+                raise HTTPException(status_code=404, detail="Processed video not found")
+            processed_path = processed_video.path
+            
+        # Analyze quality
+        quality_metrics = ffmpeg_utils.analyze_quality_loss(original_path, processed_path)
+        
+        if not quality_metrics.get("success"):
+            raise HTTPException(status_code=500, detail=f"Quality analysis failed: {quality_metrics.get('error', 'Unknown error')}")
+            
+        logging.info(f"Quality analysis completed: SSIM={quality_metrics.get('ssim')}, PSNR={quality_metrics.get('psnr')}")
+        
+        return {
+            "success": True,
+            "original_video": {
+                "id": original_video.id,
+                "filename": original_video.filename
+            },
+            "processed_video": {
+                "path": processed_path
+            },
+            "quality_metrics": quality_metrics,
+            "timestamp": datetime.datetime.now().isoformat()
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Quality analysis endpoint error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/quality/report")
+async def generate_processing_quality_report(request: dict):
+    """
+    Generate comprehensive quality report for processing pipeline.
+    
+    Body:
+    - processing_chain: List of processing steps with original/processed paths
+    
+    Returns detailed quality preservation analysis.
+    """
+    try:
+        processing_chain = request.get("processing_chain", [])
+        
+        if not processing_chain:
+            raise HTTPException(status_code=400, detail="processing_chain is required")
+            
+        # Validate processing chain format
+        for i, step in enumerate(processing_chain):
+            required_fields = ["original", "processed", "operation"]
+            if not all(field in step for field in required_fields):
+                raise HTTPException(
+                    status_code=400, 
+                    detail=f"Step {i+1} missing required fields: {required_fields}"
+                )
+                
+        # Generate comprehensive report
+        quality_report = ffmpeg_utils.generate_quality_report(processing_chain)
+        
+        if not quality_report.get("success"):
+            raise HTTPException(status_code=500, detail=f"Report generation failed: {quality_report.get('error', 'Unknown error')}")
+            
+        logging.info(f"Quality report generated for {len(processing_chain)} processing steps")
+        
+        return {
+            "success": True,
+            "report": quality_report
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Quality report endpoint error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/quality/test")
+async def test_quality_metrics():
+    """
+    Test endpoint to verify quality metrics functionality.
+    Tests available FFmpeg quality filters.
+    """
+    try:
+        # Check available FFmpeg filters
+        check_cmd = ["ffmpeg", "-filters"]
+        result = subprocess.run(check_cmd, capture_output=True, text=True, timeout=10)
+        
+        available_filters = {
+            "ssim": "ssim" in result.stdout,
+            "psnr": "psnr" in result.stdout, 
+            "libvmaf": "libvmaf" in result.stdout
+        }
+        
+        # Test FFmpeg version
+        version_cmd = ["ffmpeg", "-version"]
+        version_result = subprocess.run(version_cmd, capture_output=True, text=True, timeout=10)
+        version_info = version_result.stdout.split('\n')[0] if version_result.returncode == 0 else "Unknown"
+        
+        return {
+            "success": True,
+            "ffmpeg_version": version_info,
+            "available_quality_filters": available_filters,
+            "recommendations": {
+                "ssim": "Available - Structural Similarity Index measurement" if available_filters["ssim"] else "Not available - Install FFmpeg with ssim filter",
+                "psnr": "Available - Peak Signal-to-Noise Ratio measurement" if available_filters["psnr"] else "Not available - Install FFmpeg with psnr filter", 
+                "vmaf": "Available - Video Multimethod Assessment Fusion" if available_filters["libvmaf"] else "Not available - Requires FFmpeg with libvmaf (optional)"
+            }
+        }
+        
+    except Exception as e:
+        logging.error(f"Quality test endpoint error: {e}")
+        return {
+            "success": False,
+            "error": str(e),
+            "recommendations": ["Install FFmpeg with quality filter support"]
+        }
+
+
+@app.post("/api/timeline/build-lossless")
+async def build_timeline_lossless(request: dict, db: Session = Depends(get_db)):
+    """
+    Build timeline using advanced lossless concatenation.
+    
+    Body:
+    - quality_target: "lossless", "near_lossless", or "lossy" 
+    - clips: Optional list of specific clips (uses timeline clips if not provided)
+    
+    Returns enhanced build results with quality metrics.
+    """
+    try:
+        quality_target = request.get("quality_target", "lossless")
+        custom_clips = request.get("clips")
+        
+        if custom_clips:
+            # Use provided clips
+            clips_data = []
+            for clip_info in custom_clips:
+                video_id = clip_info.get("video_id")
+                start = clip_info.get("start", 0)
+                end = clip_info.get("end")
+                
+                video = db.query(Video).filter(Video.id == video_id).first()
+                if not video:
+                    raise HTTPException(status_code=404, detail=f"Video {video_id} not found")
+                    
+                clips_data.append({
+                    "path": video.path,
+                    "start": start,
+                    "end": end,
+                    "video_id": video_id
+                })
+        else:
+            # Use timeline clips from database
+            clips = db.query(Clip).order_by(Clip.order_index).all()
+            if not clips:
+                raise HTTPException(status_code=400, detail="No clips in timeline")
+                
+            clips_data = []
+            for clip in clips:
+                clips_data.append({
+                    "path": clip.video.path,
+                    "start": clip.start_time,
+                    "end": clip.end_time,
+                    "video_id": str(clip.video.id)
+                })
+        
+        # Check concatenation compatibility
+        compatibility = ffmpeg_utils.validate_concat_compatibility(clips_data)
+        
+        # Generate output filename
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        output_filename = f"timeline_lossless_{timestamp}.mp4"
+        output_path = os.path.join("store", "exports", output_filename)
+        
+        # Ensure exports directory exists
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        
+        # Build timeline using advanced concatenation
+        result = ffmpeg_utils.concat_clips_lossless(clips_data, output_path, quality_target)
+        
+        if not result["success"]:
+            raise HTTPException(status_code=500, detail=f"Timeline build failed: {result.get('error', 'Unknown error')}")
+            
+        logging.info(f"Lossless timeline built successfully: {output_filename}")
+        
+        return {
+            "success": True,
+            "output_file": output_filename,
+            "download_url": f"/static/exports/{output_filename}",
+            "clips_count": len(clips_data),
+            "quality_target": quality_target,
+            "method_used": result["method_used"],
+            "processing_time": result["processing_time"],
+            "compatibility": compatibility,
+            "quality_analysis": result.get("quality_analysis", {}),
+            "warnings": result.get("warnings", []),
+            "timestamp": datetime.datetime.now().isoformat()
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Lossless timeline build error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/concatenation/validate")
+async def validate_concatenation_compatibility(request: dict, db: Session = Depends(get_db)):
+    """
+    Validate concatenation compatibility for clips.
+    
+    Body:
+    - clip_ids: List of clip IDs or video IDs to check
+    
+    Returns compatibility analysis and recommendations.
+    """
+    try:
+        clip_ids = request.get("clip_ids", [])
+        
+        if not clip_ids:
+            raise HTTPException(status_code=400, detail="clip_ids is required")
+            
+        # Gather clip information
+        clips_data = []
+        for clip_id in clip_ids:
+            # Try as clip ID first, then video ID
+            clip = db.query(Clip).filter(Clip.id == clip_id).first()
+            if clip:
+                clips_data.append({
+                    "path": clip.video.path,
+                    "id": str(clip.id),
+                    "type": "clip"
+                })
+            else:
+                # Try as video ID
+                video = db.query(Video).filter(Video.id == clip_id).first()
+                if video:
+                    clips_data.append({
+                        "path": video.path,
+                        "id": str(video.id),
+                        "type": "video"
+                    })
+                else:
+                    raise HTTPException(status_code=404, detail=f"Clip/Video {clip_id} not found")
+                    
+        # Validate compatibility
+        compatibility = ffmpeg_utils.validate_concat_compatibility(clips_data)
+        
+        return {
+            "success": True,
+            "compatibility": compatibility,
+            "timestamp": datetime.datetime.now().isoformat()
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Concatenation validation error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

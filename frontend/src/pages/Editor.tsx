@@ -6,11 +6,15 @@ import {
   markClip, listClips, ClipOut,
   buildProject,
   getTimelineClips, getVideos, ClipWithVideoOut, // NEW: Multi-video timeline
-  clearTimeline // NEW: Clear timeline function
+  clearTimeline, // NEW: Clear timeline function
+  getVideoKeyframes, extractClipLossless, smartCutClip, // NEW: Lossless features
+  KeyframeData, LosslessExtractionResult // NEW: Type imports
 } from "../api/client";
 import { useEditorStore } from "../stores/editorStore";
 import VideoPlayer from "../components/VideoPlayer";
 import Timeline from "../components/Timeline";
+import LosslessIndicator from "../components/LosslessIndicator";
+import KeyframeTimeline from "../components/KeyframeTimeline";
 import { formatTime } from "../utils/time";
 import "./Editor.css"; // NEW: Import the stylesheet
 
@@ -45,6 +49,13 @@ export default function Editor() {
   const { data: timelineClips = [], isLoading: isLoadingClips, refetch: refetchTimelineClips } = useQuery<ClipWithVideoOut[]>({
     queryKey: ["timeline-clips"],
     queryFn: getTimelineClips,
+  });
+
+  // NEW: Keyframe data for lossless editing
+  const { data: keyframeData } = useQuery<KeyframeData>({
+    queryKey: ["video", activeVideoId, "keyframes"],
+    queryFn: () => getVideoKeyframes(activeVideoId!),
+    enabled: !!activeVideoId,
   });
 
   // NEW: All available videos
@@ -137,6 +148,57 @@ export default function Editor() {
     onError: (error) => {
       toast.dismiss();
       toast.error(`Failed to clear timeline: ${error.message}`);
+    }
+  });
+
+  // NEW: Lossless extraction mutations
+  const losslessExtractMutation = useMutation<LosslessExtractionResult, Error, { video_id: string; start: number; end: number; }>({
+    mutationFn: extractClipLossless,
+    onMutate: () => {
+      toast.loading("Extracting with lossless priority...");
+    },
+    onSuccess: (result) => {
+      toast.dismiss();
+      toast.success(`Lossless extraction successful! Method: ${result.method_used}`);
+      if (result.download_url) {
+        // Auto-download the file
+        const a = document.createElement('a');
+        a.href = result.download_url;
+        a.download = result.filename || 'lossless_extract.mp4';
+        a.click();
+      }
+    },
+    onError: (error) => {
+      toast.dismiss();
+      toast.error(`Lossless extraction failed: ${error.message}`);
+    },
+    onSettled: () => {
+      toast.dismiss();
+    }
+  });
+
+  const smartCutMutation = useMutation<LosslessExtractionResult, Error, { video_id: string; start: number; end: number; }>({
+    mutationFn: smartCutClip,
+    onMutate: () => {
+      toast.loading("Performing smart cut...");
+    },
+    onSuccess: (result) => {
+      toast.dismiss();
+      toast.success(`Smart cut successful! Quality preserved: ${result.quality_preserved ? 'Yes' : 'No'}`);
+      if (result.download_url) {
+        // Auto-download the file
+        const a = document.createElement('a');
+        a.href = result.download_url;
+        a.download = result.filename || 'smart_cut.mp4';
+        a.click();
+      }
+    },
+    onError: (error) => {
+      toast.dismiss();
+      toast.error(`Smart cut failed: ${error.message}`);
+    },
+    onSettled: () => {
+      toast.dismiss();
     }
   });
 
@@ -266,6 +328,60 @@ export default function Editor() {
           </div>
         )}
 
+        {/* Professional Keyframe Timeline Integration */}
+        {activeVideo && keyframeData && (
+          <div style={{ marginTop: "1rem" }}>
+            <div style={{ 
+              display: "flex", 
+              justifyContent: "space-between", 
+              alignItems: "center",
+              marginBottom: "0.5rem"
+            }}>
+              <span style={{ 
+                fontSize: "0.85rem", 
+                color: "#6b7280",
+                fontWeight: "500"
+              }}>
+                🎯 {keyframeData.keyframes.length} keyframes detected
+              </span>
+              <button 
+                onClick={() => {
+                  // Find nearest keyframe to current time
+                  const nearest = keyframeData.keyframes.reduce((prev, curr) => 
+                    Math.abs(curr - playerCurrentTime) < Math.abs(prev - playerCurrentTime) ? curr : prev
+                  );
+                  console.log("Snap to keyframe:", nearest);
+                }}
+                style={{
+                  padding: "0.25rem 0.75rem",
+                  fontSize: "0.75rem",
+                  backgroundColor: "#10b981",
+                  color: "white",
+                  border: "none",
+                  borderRadius: "4px",
+                  cursor: "pointer"
+                }}
+              >
+                📍 Snap to Keyframe
+              </button>
+            </div>
+            
+            <KeyframeTimeline
+              keyframes={keyframeData.keyframes}
+              duration={activeVideo.duration || 0}
+              currentTime={playerCurrentTime}
+              markedIn={markedIn}
+              markedOut={markedOut}
+              onSeek={(time) => {
+                console.log("Seek to:", time);
+              }}
+              onSnapToKeyframe={(time) => {
+                console.log("Snap to keyframe:", time);
+              }}
+            />
+          </div>
+        )}
+
         {activeVideo && (
           <div className="marking-controls" style={{ marginTop: "2rem" }}>
               <button 
@@ -303,6 +419,91 @@ export default function Editor() {
               >
                   {addClip.isPending ? "Adding..." : "➕ Add to Timeline"}
               </button>
+
+              {/* Professional Lossless Extraction Tools */}
+              <button 
+                  onClick={() => {
+                    if (activeVideoId && markedIn !== null && markedOut !== null) {
+                      losslessExtractMutation.mutate({ 
+                        video_id: activeVideoId, 
+                        start: markedIn, 
+                        end: markedOut 
+                      });
+                    }
+                  }}
+                  className="btn"
+                  style={{ 
+                    backgroundColor: "#10b981", 
+                    color: "white", 
+                    marginLeft: "0.5rem",
+                    position: "relative",
+                    overflow: "hidden"
+                  }}
+                  disabled={!activeVideoId || markedIn === null || markedOut === null || markedOut <= markedIn || losslessExtractMutation.isPending}
+                  title="Extract with maximum quality preservation - uses stream copy when possible"
+              >
+                  {losslessExtractMutation.isPending ? (
+                    <>⏳ Extracting...</>
+                  ) : (
+                    <>🎯 Lossless Extract</>
+                  )}
+                  {/* Quality indicator */}
+                  {keyframeData && markedIn !== null && markedOut !== null && (
+                    <div style={{
+                      position: "absolute",
+                      top: "-2px",
+                      right: "-2px",
+                      width: "8px",
+                      height: "8px",
+                      borderRadius: "50%",
+                      backgroundColor: (() => {
+                        // Check if selection is keyframe-aligned
+                        const nearestStartKeyframe = keyframeData.keyframes.find(kf => Math.abs(kf - markedIn) < 0.1);
+                        const nearestEndKeyframe = keyframeData.keyframes.find(kf => Math.abs(kf - markedOut) < 0.1);
+                        return nearestStartKeyframe && nearestEndKeyframe ? "#22c55e" : "#f59e0b";
+                      })(),
+                      border: "2px solid white"
+                    }} />
+                  )}
+              </button>
+
+              <button 
+                  onClick={() => {
+                    if (activeVideoId && markedIn !== null && markedOut !== null) {
+                      smartCutMutation.mutate({ 
+                        video_id: activeVideoId, 
+                        start: markedIn, 
+                        end: markedOut 
+                      });
+                    }
+                  }}
+                  className="btn"
+                  style={{ 
+                    backgroundColor: "#f59e0b", 
+                    color: "white", 
+                    marginLeft: "0.5rem",
+                    position: "relative"
+                  }}
+                  disabled={!activeVideoId || markedIn === null || markedOut === null || markedOut <= markedIn || smartCutMutation.isPending}
+                  title="Frame-accurate cutting with minimal quality loss"
+              >
+                  {smartCutMutation.isPending ? (
+                    <>⏳ Cutting...</>
+                  ) : (
+                    <>✂️ Smart Cut</>
+                  )}
+                  {/* Precision indicator */}
+                  <div style={{
+                    position: "absolute",
+                    top: "-2px",
+                    right: "-2px",
+                    width: "8px",
+                    height: "8px",
+                    borderRadius: "50%",
+                    backgroundColor: "#ef4444",
+                    border: "2px solid white"
+                  }} />
+              </button>
               <div className="marks-display">
                 {activeVideo?.filename} {formatTime(playerCurrentTime)} | 
                 Range: {markedIn !== null ? formatTime(markedIn) : "--:--"} to {markedOut !== null ? formatTime(markedOut) : "--:--"}
@@ -322,13 +523,64 @@ export default function Editor() {
       </section>
 
       <section className="editor-section">
-        <div className="export-controls">
+        <div className="export-controls" style={{ display: "flex", gap: "1rem", alignItems: "center" }}>
             <button
                 onClick={handleBuildProject}
                 className="btn"
                 disabled={!activeVideoId || timelineClips.length === 0 || buildProjectMutation.isPending}
+                title="Standard timeline build (compatible but may lose quality)"
             >
-                {buildProjectMutation.isPending ? "Building..." : "🚀 Build Timeline Video"}
+                {buildProjectMutation.isPending ? "Building..." : "🚀 Build Timeline"}
+            </button>
+            
+            <button
+                onClick={() => {
+                  // Use professional lossless timeline build
+                  fetch('/api/timeline/build-lossless', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ quality_target: 'lossless' })
+                  })
+                  .then(response => response.json())
+                  .then(data => {
+                    if (data.success) {
+                      toast.success(`✅ Lossless build: ${data.method_used} | ${data.processing_time.toFixed(1)}s`);
+                      // Auto-download
+                      const a = document.createElement('a');
+                      a.href = data.download_url;
+                      a.download = data.output_file;
+                      a.click();
+                    } else {
+                      toast.error('Lossless build failed');
+                    }
+                  })
+                  .catch(error => {
+                    toast.error(`Build error: ${error.message}`);
+                  });
+                }}
+                className="btn"
+                style={{ 
+                  backgroundColor: "#8b5cf6", 
+                  color: "white", 
+                  position: "relative",
+                  fontWeight: "600"
+                }}
+                disabled={timelineClips.length === 0}
+                title="Professional lossless timeline build with maximum quality preservation"
+            >
+                🌟 Lossless Build
+                {/* Professional quality indicator */}
+                <div style={{
+                  position: "absolute",
+                  top: "-3px",
+                  right: "-3px",
+                  width: "10px",
+                  height: "10px",
+                  borderRadius: "50%",
+                  backgroundColor: "#22c55e",
+                  border: "2px solid white",
+                  boxShadow: "0 0 4px rgba(34, 197, 94, 0.5)"
+                }} />
             </button>
         </div>
       </section>

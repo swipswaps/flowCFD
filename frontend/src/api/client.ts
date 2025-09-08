@@ -265,3 +265,114 @@ export function openExportWebSocket(export_id: string, onMessage: (s: ExportStat
   }, 15000);
   return ws;
 }
+
+// Lossless video editing API functions
+
+export interface KeyframeData {
+  video_id: string;
+  keyframes: number[];
+  count: number;
+  filename: string;
+}
+
+export interface LosslessCompatibility {
+  compatible: boolean;
+  video_codec?: string;
+  audio_codec?: string;
+  container_format?: string;
+  has_bframes?: boolean;
+  reason?: string;
+}
+
+export interface LosslessExtractionResult {
+  success: boolean;
+  method_used: string;
+  quality_preserved: boolean;
+  keyframe_aligned: boolean;
+  processing_time: number;
+  file_size: number;
+  download_url?: string;
+  filename?: string;
+  warnings: string[];
+}
+
+export async function getVideoKeyframes(videoId: string): Promise<KeyframeData> {
+  const res = await fetch(`/api/videos/${videoId}/keyframes`);
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+  }
+  return res.json();
+}
+
+export async function getVideoLosslessCompatibility(videoId: string): Promise<LosslessCompatibility> {
+  const res = await fetch(`/api/videos/${videoId}/lossless-compatibility`);
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+  }
+  return res.json();
+}
+
+export async function extractClipLossless(input: {
+  video_id: string;
+  start: number;
+  end: number;
+  lossless?: boolean;
+  force_keyframe?: boolean;
+  smart_cut?: boolean;
+}): Promise<LosslessExtractionResult> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 60000); // 60 second timeout for extraction
+  
+  try {
+    const res = await fetch(`/api/clips/extract`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
+    
+    if (!res.ok) {
+      const errorText = await res.text();
+      throw new Error(`HTTP ${res.status}: ${errorText}`);
+    }
+    return res.json();
+  } catch (error) {
+    clearTimeout(timeoutId);
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error('Extraction timed out after 60 seconds');
+    }
+    throw error;
+  }
+}
+
+export async function smartCutClip(input: {
+  video_id: string;
+  start: number;
+  end: number;
+}): Promise<LosslessExtractionResult> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 60000); // 60 second timeout
+  
+  try {
+    const res = await fetch(`/api/clips/smart-cut`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
+    
+    if (!res.ok) {
+      const errorText = await res.text();
+      throw new Error(`HTTP ${res.status}: ${errorText}`);
+    }
+    return res.json();
+  } catch (error) {
+    clearTimeout(timeoutId);
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error('Smart cut timed out after 60 seconds');
+    }
+    throw error;
+  }
+}

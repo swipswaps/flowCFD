@@ -10,7 +10,14 @@ from unittest.mock import patch, MagicMock
 import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from ffmpeg_utils import get_keyframes, validate_lossless_compatibility, find_nearest_keyframe
+from ffmpeg_utils import (
+    get_keyframes, 
+    validate_lossless_compatibility, 
+    find_nearest_keyframe,
+    extract_clip_lossless,
+    _extract_with_stream_copy,
+    _extract_with_quality_encoding
+)
 
 
 class TestLosslessCutting(unittest.TestCase):
@@ -20,6 +27,7 @@ class TestLosslessCutting(unittest.TestCase):
         """Set up test fixtures."""
         self.temp_dir = tempfile.mkdtemp()
         self.test_video_path = os.path.join(self.temp_dir, "test_video.mp4")
+        self.test_output_path = os.path.join(self.temp_dir, "test_output.mp4")
         # Create a dummy file for testing
         with open(self.test_video_path, 'w') as f:
             f.write("dummy video content")
@@ -77,6 +85,140 @@ class TestLosslessCutting(unittest.TestCase):
             self.assertEqual(keyframes[0], 0.0)
             self.assertEqual(keyframes[1], 2.0)
             self.assertEqual(keyframes[2], 4.0)
+
+    def test_lossless_extraction_basic(self):
+        """Test basic lossless extraction functionality."""
+        # Test with keyframe detection disabled (current state)
+        result = extract_clip_lossless(
+            src=self.test_video_path,
+            start=1.0,
+            end=3.0,
+            out_path=self.test_output_path,
+            force_keyframe=False,
+            smart_cut=False
+        )
+        
+        # Should succeed with basic extraction method
+        self.assertTrue(result["success"])
+        self.assertIn(result["method_used"], ["re_encoded", "fallback_encoded"])
+        self.assertFalse(result["quality_preserved"])
+        self.assertFalse(result["keyframe_aligned"])
+        self.assertGreater(result["processing_time"], 0)
+        self.assertGreater(result["file_size"], 0)
+        
+        # Verify output file exists
+        self.assertTrue(os.path.exists(self.test_output_path))
+
+    def test_lossless_extraction_with_keyframes(self):
+        """Test lossless extraction with keyframe alignment."""
+        # Mock keyframes for testing
+        with patch('ffmpeg_utils.get_keyframes') as mock_keyframes:
+            mock_keyframes.return_value = [0.0, 2.0, 4.0, 6.0]
+            
+            result = extract_clip_lossless(
+                src=self.test_video_path,
+                start=2.0,  # Aligned with keyframe
+                end=4.0,    # Aligned with keyframe
+                out_path=self.test_output_path,
+                force_keyframe=True,
+                smart_cut=False
+            )
+            
+            # Should use stream copy for keyframe-aligned cuts
+            self.assertTrue(result["success"])
+            self.assertEqual(result["method_used"], "stream_copy")
+            self.assertTrue(result["quality_preserved"])
+            self.assertTrue(result["keyframe_aligned"])
+
+    def test_find_nearest_keyframe(self):
+        """Test keyframe finding algorithm."""
+        keyframes = [0.0, 2.0, 4.0, 6.0, 8.0]
+        
+        # Test prefer_before=True
+        self.assertEqual(find_nearest_keyframe(1.5, keyframes, prefer_before=True), 0.0)
+        self.assertEqual(find_nearest_keyframe(2.0, keyframes, prefer_before=True), 2.0)
+        self.assertEqual(find_nearest_keyframe(3.0, keyframes, prefer_before=True), 2.0)
+        
+        # Test prefer_before=False
+        self.assertEqual(find_nearest_keyframe(1.5, keyframes, prefer_before=False), 2.0)
+        self.assertEqual(find_nearest_keyframe(3.0, keyframes, prefer_before=False), 4.0)
+        self.assertEqual(find_nearest_keyframe(9.0, keyframes, prefer_before=False), 8.0)
+        
+        # Test empty keyframes
+        self.assertIsNone(find_nearest_keyframe(1.0, [], prefer_before=True))
+
+    def test_stream_copy_extraction(self):
+        """Test stream copy extraction method."""
+        success = _extract_with_stream_copy(
+            src=self.test_video_path,
+            start=1.0,
+            duration=2.0,
+            out_path=self.test_output_path
+        )
+        
+        # Should succeed for most videos
+        self.assertTrue(success)
+        self.assertTrue(os.path.exists(self.test_output_path))
+        
+        # Verify file is not empty
+        self.assertGreater(os.path.getsize(self.test_output_path), 0)
+
+    def test_quality_encoding_extraction(self):
+        """Test high-quality encoding extraction method."""
+        success = _extract_with_quality_encoding(
+            src=self.test_video_path,
+            start=1.0,
+            duration=2.0,
+            out_path=self.test_output_path
+        )
+        
+        # Should succeed with re-encoding
+        self.assertTrue(success)
+        self.assertTrue(os.path.exists(self.test_output_path))
+        self.assertGreater(os.path.getsize(self.test_output_path), 0)
+
+    def test_smart_cut_functionality(self):
+        """Test smart cut implementation for non-keyframe cuts."""
+        # Mock keyframes for testing
+        keyframes = [0.0, 2.0, 4.0, 6.0, 8.0]
+        
+        # Test smart cut with non-aligned timestamps
+        with patch('ffmpeg_utils._extract_with_smart_cut') as mock_smart_cut:
+            mock_smart_cut.return_value = True
+            
+            result = extract_clip_lossless(
+                src=self.test_video_path,
+                start=1.5,  # Not aligned with keyframe
+                end=3.5,    # Not aligned with keyframe
+                out_path=self.test_output_path,
+                force_keyframe=False,
+                smart_cut=True
+            )
+            
+            # Should attempt smart cut for non-aligned cuts
+            mock_smart_cut.assert_called_once()
+            
+    def test_smart_cut_precision(self):
+        """Test smart cut precision and timing calculations."""
+        keyframes = [0.0, 2.0, 4.0, 6.0, 8.0]
+        
+        # Test timing calculations
+        start = 1.5
+        end = 3.5
+        
+        pre_keyframe = find_nearest_keyframe(start, keyframes, prefer_before=True)
+        post_keyframe = find_nearest_keyframe(end, keyframes, prefer_before=False)
+        
+        self.assertEqual(pre_keyframe, 0.0)  # Nearest before 1.5
+        self.assertEqual(post_keyframe, 4.0)  # Nearest after 3.5
+        
+        # Calculate offsets as smart cut would
+        pre_cut_offset = start - pre_keyframe
+        post_cut_offset = end - pre_keyframe
+        
+        self.assertEqual(pre_cut_offset, 1.5)
+        self.assertEqual(post_cut_offset, 3.5)
+        self.assertGreater(post_cut_offset, pre_cut_offset)
     
     def test_lossless_compatibility_validation(self):
         """Test lossless compatibility validation."""

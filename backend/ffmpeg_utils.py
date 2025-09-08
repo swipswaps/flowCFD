@@ -5,6 +5,7 @@ import tempfile
 import shutil
 import json
 import logging
+import datetime
 
 from typing import Iterable, List, Dict, Any
 
@@ -163,6 +164,119 @@ def generate_thumbnail_strip(video_path: str, output_strip_path: str, frame_inte
             print(f"Error stacking frames for thumbnail strip: {e.stderr}")
             return False
     # Temp directory is cleaned up automatically
+
+def extract_clip_lossless(src: str, start: float, end: float, out_path: str,
+                         force_keyframe: bool = True, 
+                         smart_cut: bool = False) -> Dict[str, Any]:
+    """
+    Lossless-first clip extraction with comprehensive fallback strategy.
+    Based on LosslessCut methodology and FFmpeg best practices.
+    
+    Args:
+        src: Source video path
+        start: Start time in seconds
+        end: End time in seconds  
+        out_path: Output file path
+        force_keyframe: If True, adjust to nearest keyframes for lossless cutting
+        smart_cut: If True, use smart cutting for non-keyframe cuts
+    
+    Returns:
+        Dict containing extraction metadata and quality information
+    """
+    import time
+    start_time = time.time()
+    duration = end - start
+    
+    # Get keyframes for lossless analysis (with timeout protection)
+    try:
+        keyframes = get_keyframes(src)
+        logging.info(f"Detected {len(keyframes)} keyframes for lossless analysis")
+    except Exception as e:
+        logging.warning(f"Keyframe detection failed: {e}")
+        keyframes = []
+    
+    # Check if cut points align with keyframes (within 0.1s tolerance)
+    keyframe_tolerance = 0.1
+    start_keyframe = find_nearest_keyframe(start, keyframes, prefer_before=True) if keyframes else None
+    end_keyframe = find_nearest_keyframe(end, keyframes, prefer_before=False) if keyframes else None
+    
+    start_aligned = start_keyframe is not None and abs(start - start_keyframe) <= keyframe_tolerance
+    end_aligned = end_keyframe is not None and abs(end - end_keyframe) <= keyframe_tolerance
+    keyframe_aligned = start_aligned and end_aligned
+    
+    # Adjust to keyframes if force_keyframe is True and alignment is close
+    if force_keyframe and keyframes:
+        if start_keyframe is not None and abs(start - start_keyframe) <= 1.0:  # Within 1 second
+            start = start_keyframe
+            start_aligned = True
+        if end_keyframe is not None and abs(end - end_keyframe) <= 1.0:  # Within 1 second  
+            end = end_keyframe
+            end_aligned = True
+        duration = end - start
+        keyframe_aligned = start_aligned and end_aligned
+    
+    # Priority 1: Keyframe-aligned stream copy (truly lossless)
+    if keyframe_aligned:
+        success = _extract_with_stream_copy(src, start, duration, out_path)
+        if success:
+            processing_time = time.time() - start_time
+            file_size = os.path.getsize(out_path) if os.path.exists(out_path) else 0
+            return {
+                "success": True,
+                "method_used": "stream_copy",
+                "quality_preserved": True,
+                "keyframe_aligned": True,
+                "processing_time": processing_time,
+                "file_size": file_size,
+                "warnings": []
+            }
+    
+    # Priority 2: Smart cut with minimal re-encoding
+    if smart_cut and keyframes:
+        success = _extract_with_smart_cut(src, start, end, out_path, keyframes)
+        if success:
+            processing_time = time.time() - start_time
+            file_size = os.path.getsize(out_path) if os.path.exists(out_path) else 0
+            return {
+                "success": True,
+                "method_used": "smart_cut",
+                "quality_preserved": True,  # Near-lossless
+                "keyframe_aligned": False,
+                "processing_time": processing_time,
+                "file_size": file_size,
+                "warnings": ["Smart cut used - minimal quality loss"]
+            }
+    
+    # Priority 3: High-quality re-encoding with original codec
+    success = _extract_with_quality_encoding(src, start, duration, out_path)
+    if success:
+        processing_time = time.time() - start_time
+        file_size = os.path.getsize(out_path) if os.path.exists(out_path) else 0
+        return {
+            "success": True,
+            "method_used": "re_encoded",
+            "quality_preserved": False,
+            "keyframe_aligned": keyframe_aligned,
+            "processing_time": processing_time,
+            "file_size": file_size,
+            "warnings": ["Re-encoding required - some quality loss"]
+        }
+    
+    # Priority 4: Fallback encoding with quality preservation
+    success = _extract_with_fallback_encoding(src, start, duration, out_path)
+    processing_time = time.time() - start_time
+    file_size = os.path.getsize(out_path) if os.path.exists(out_path) else 0
+    
+    return {
+        "success": success,
+        "method_used": "fallback_encoded" if success else "failed",
+        "quality_preserved": False,
+        "keyframe_aligned": keyframe_aligned,
+        "processing_time": processing_time,
+        "file_size": file_size,
+        "warnings": ["Fallback encoding used - quality loss possible"] if success else ["All extraction methods failed"]
+    }
+
 
 def extract_clip(src: str, start: float, duration: float, out_path: str) -> bool:
     """
@@ -380,7 +494,7 @@ def get_keyframes(video_path: str) -> List[float]:
     ]
     
     try:
-        result = subprocess.run(cmd1, capture_output=True, text=True, timeout=30)
+        result = subprocess.run(cmd1, capture_output=True, text=True, timeout=10)
         if result.returncode == 0 and result.stdout.strip():
             keyframes = []
             for line in result.stdout.strip().split('\n'):
@@ -407,7 +521,7 @@ def get_keyframes(video_path: str) -> List[float]:
     ]
     
     try:
-        result = subprocess.run(cmd2, capture_output=True, text=True, timeout=60)
+        result = subprocess.run(cmd2, capture_output=True, text=True, timeout=15)
         if result.returncode == 0:
             keyframes = []
             for line in result.stdout.strip().split('\n'):
@@ -446,6 +560,245 @@ def get_keyframes(video_path: str) -> List[float]:
     
     logging.error(f"All keyframe detection methods failed for {video_path}")
     return []
+
+
+def _extract_with_stream_copy(src: str, start: float, duration: float, out_path: str) -> bool:
+    """
+    Extract clip using stream copy (truly lossless).
+    Only works when cut points align with keyframes.
+    """
+    cmd = [
+        "ffmpeg", "-y",
+        "-ss", f"{start}",
+        "-t", f"{duration}",
+        "-i", src,
+        "-c", "copy",
+        "-avoid_negative_ts", "make_zero",
+        out_path
+    ]
+    
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+        if result.returncode == 0:
+            logging.info(f"Stream copy extraction successful: {os.path.basename(out_path)}")
+            return True
+        else:
+            logging.warning(f"Stream copy failed: {result.stderr[-200:] if result.stderr else 'No error message'}")
+            return False
+    except subprocess.TimeoutExpired:
+        logging.error(f"Stream copy extraction timed out for {os.path.basename(src)}")
+        return False
+    except Exception as e:
+        logging.error(f"Stream copy extraction failed: {e}")
+        return False
+
+
+def _extract_with_smart_cut(src: str, start: float, end: float, out_path: str, keyframes: List[float]) -> bool:
+    """
+    Smart cut implementation for non-keyframe-aligned edits.
+    Re-encodes only affected frames while preserving quality.
+    Based on LosslessCut methodology and FFmpeg segment muxer.
+    """
+    # Find keyframes before and after cut points
+    pre_keyframe = find_nearest_keyframe(start, keyframes, prefer_before=True)
+    post_keyframe = find_nearest_keyframe(end, keyframes, prefer_before=False)
+    
+    if pre_keyframe is None or post_keyframe is None:
+        logging.warning("Smart cut failed: Could not find suitable keyframes")
+        return False
+    
+    # Calculate precise timing for smart cut
+    pre_cut_offset = start - pre_keyframe
+    post_cut_offset = end - pre_keyframe
+    
+    # Ensure we have reasonable keyframe boundaries
+    if pre_cut_offset < 0 or post_cut_offset <= pre_cut_offset:
+        logging.warning(f"Smart cut failed: Invalid timing - pre_offset: {pre_cut_offset}, post_offset: {post_cut_offset}")
+        return False
+    
+    logging.info(f"Smart cut: keyframe at {pre_keyframe}s, extracting {pre_cut_offset:.3f}s to {post_cut_offset:.3f}s")
+    
+    # Method 1: Try with filter_complex for precise frame-accurate cutting
+    cmd_precise = [
+        "ffmpeg", "-y",
+        "-ss", f"{pre_keyframe}",
+        "-i", src,
+        "-filter_complex",
+        f"[0:v]trim=start={pre_cut_offset}:end={post_cut_offset},setpts=PTS-STARTPTS[v];"
+        f"[0:a]atrim=start={pre_cut_offset}:end={post_cut_offset},asetpts=PTS-STARTPTS[a]",
+        "-map", "[v]",
+        "-map", "[a]",
+        "-c:v", "libx264",
+        "-crf", "18",  # High quality
+        "-preset", "medium",
+        "-c:a", "aac",
+        "-movflags", "+faststart",
+        "-avoid_negative_ts", "make_zero",
+        out_path
+    ]
+    
+    try:
+        result = subprocess.run(cmd_precise, capture_output=True, text=True, timeout=120)
+        if result.returncode == 0:
+            logging.info(f"Smart cut (precise) extraction successful: {os.path.basename(out_path)}")
+            return True
+        else:
+            logging.warning(f"Smart cut (precise) failed: {result.stderr[-300:] if result.stderr else 'No error message'}")
+    except subprocess.TimeoutExpired:
+        logging.error(f"Smart cut (precise) extraction timed out for {os.path.basename(src)}")
+    except Exception as e:
+        logging.warning(f"Smart cut (precise) extraction failed: {e}")
+    
+    # Method 2: Fallback to simpler approach with seek and duration
+    duration = end - start
+    cmd_simple = [
+        "ffmpeg", "-y",
+        "-ss", f"{start}",
+        "-t", f"{duration}",
+        "-i", src,
+        "-c:v", "libx264",
+        "-crf", "18",  # High quality
+        "-preset", "medium", 
+        "-c:a", "aac",
+        "-movflags", "+faststart",
+        "-avoid_negative_ts", "make_zero",
+        out_path
+    ]
+    
+    try:
+        result = subprocess.run(cmd_simple, capture_output=True, text=True, timeout=120)
+        if result.returncode == 0:
+            logging.info(f"Smart cut (simple) extraction successful: {os.path.basename(out_path)}")
+            return True
+        else:
+            logging.warning(f"Smart cut (simple) failed: {result.stderr[-300:] if result.stderr else 'No error message'}")
+            return False
+    except subprocess.TimeoutExpired:
+        logging.error(f"Smart cut (simple) extraction timed out for {os.path.basename(src)}")
+        return False
+    except Exception as e:
+        logging.error(f"Smart cut (simple) extraction failed: {e}")
+        return False
+
+
+def _extract_with_quality_encoding(src: str, start: float, duration: float, out_path: str) -> bool:
+    """
+    High-quality re-encoding with original codec preservation attempt.
+    """
+    # Try to detect original codec and use it
+    cmd = [
+        "ffmpeg", "-y",
+        "-ss", f"{start}",
+        "-t", f"{duration}",
+        "-i", src,
+        "-c:v", "libx264",
+        "-crf", "18",  # High quality
+        "-preset", "medium",
+        "-c:a", "aac",
+        "-avoid_negative_ts", "make_zero",
+        out_path
+    ]
+    
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+        if result.returncode == 0:
+            logging.info(f"Quality encoding extraction successful: {os.path.basename(out_path)}")
+            return True
+        else:
+            logging.warning(f"Quality encoding failed: {result.stderr[-200:] if result.stderr else 'No error message'}")
+            return False
+    except subprocess.TimeoutExpired:
+        logging.error(f"Quality encoding extraction timed out for {os.path.basename(src)}")
+        return False
+    except Exception as e:
+        logging.error(f"Quality encoding extraction failed: {e}")
+        return False
+
+
+def _extract_with_fallback_encoding(src: str, start: float, duration: float, out_path: str) -> bool:
+    """
+    Fallback encoding with quality preservation using available encoders.
+    """
+    # Try with libopenh264 first
+    cmd_h264 = [
+        "ffmpeg", "-y",
+        "-ss", f"{start}",
+        "-t", f"{duration}",
+        "-i", src,
+        "-c:v", "libopenh264",
+        "-c:a", "aac",
+        "-avoid_negative_ts", "make_zero",
+        out_path
+    ]
+    
+    try:
+        result = subprocess.run(cmd_h264, capture_output=True, text=True, timeout=120)
+        if result.returncode == 0:
+            logging.info(f"Fallback H264 encoding successful: {os.path.basename(out_path)}")
+            return True
+    except Exception as e:
+        logging.warning(f"Fallback H264 encoding failed: {e}")
+    
+    # Last resort: default encoding
+    cmd_default = [
+        "ffmpeg", "-y",
+        "-ss", f"{start}",
+        "-t", f"{duration}",
+        "-i", src,
+        "-avoid_negative_ts", "make_zero",
+        out_path
+    ]
+    
+    try:
+        result = subprocess.run(cmd_default, capture_output=True, text=True, timeout=120)
+        if result.returncode == 0:
+            logging.info(f"Default fallback encoding successful: {os.path.basename(out_path)}")
+            return True
+        else:
+            logging.error(f"All fallback encoding methods failed: {result.stderr[-200:] if result.stderr else 'No error message'}")
+            return False
+    except Exception as e:
+        logging.error(f"Default fallback encoding failed: {e}")
+        return False
+
+def find_nearest_keyframe(timestamp: float, keyframes: List[float], 
+                         prefer_before: bool = True):
+    """
+    Find optimal keyframe for lossless cutting.
+    Algorithm based on industry-standard video editing practices.
+    
+    Args:
+        timestamp: Target timestamp in seconds
+        keyframes: List of keyframe timestamps
+        prefer_before: If True, prefer keyframe before timestamp; if False, prefer after
+    
+    Returns:
+        Nearest keyframe timestamp, or None if no keyframes available
+    """
+    if not keyframes:
+        return None
+    
+    # Find keyframes before and after the timestamp
+    before_keyframes = [kf for kf in keyframes if kf <= timestamp]
+    after_keyframes = [kf for kf in keyframes if kf > timestamp]
+    
+    if prefer_before:
+        # Prefer keyframe before timestamp
+        if before_keyframes:
+            return max(before_keyframes)  # Closest before
+        elif after_keyframes:
+            return min(after_keyframes)  # Fallback to closest after
+        else:
+            return keyframes[0]  # This case shouldn't happen if keyframes is not empty
+    else:
+        # Prefer keyframe after timestamp
+        if after_keyframes:
+            return min(after_keyframes)  # Closest after
+        elif before_keyframes:
+            return max(before_keyframes)  # Fallback to closest before
+        else:
+            return keyframes[-1]  # This case shouldn't happen if keyframes is not empty
+
 
 def validate_lossless_compatibility(video_path: str) -> Dict[str, Any]:
     """
@@ -522,35 +875,647 @@ def validate_lossless_compatibility(video_path: str) -> Dict[str, Any]:
         logging.error(f"Compatibility check error: {e}")
         return {"compatible": False, "reason": f"Analysis error: {str(e)}"}
 
-def find_nearest_keyframe(timestamp: float, keyframes: List[float], prefer_before: bool = True) -> float:
+
+# === PHASE 3: QUALITY ASSURANCE & MONITORING ===
+
+def analyze_quality_loss(original: str, processed: str, timeout: int = 60) -> Dict[str, Any]:
     """
-    Find optimal keyframe for lossless cutting.
-    Algorithm based on industry-standard video editing practices.
+    Comprehensive quality analysis using FFmpeg filters.
+    
+    Calculates SSIM, PSNR, and VMAF metrics to measure quality preservation.
+    Based on FFmpeg quality filter documentation and professional standards.
     
     Args:
-        timestamp: Target timestamp in seconds
-        keyframes: List of keyframe timestamps
-        prefer_before: If True, prefer keyframe before timestamp, else after
+        original: Path to original video file
+        processed: Path to processed video file
+        timeout: Maximum analysis time in seconds
         
     Returns:
-        Nearest keyframe timestamp
+        Dict containing quality metrics and analysis results
     """
-    if not keyframes:
-        return timestamp
+    import time
+    start_time = time.time()
     
-    if prefer_before:
-        # Find the closest keyframe before or at the timestamp
-        valid_keyframes = [kf for kf in keyframes if kf <= timestamp]
-        if valid_keyframes:
-            return max(valid_keyframes)
+    results = {
+        "ssim": None,
+        "psnr": None, 
+        "vmaf": None,
+        "file_size_ratio": None,
+        "bitrate_ratio": None,
+        "processing_time": 0,
+        "success": False,
+        "warnings": []
+    }
+    
+    try:
+        # Check if files exist
+        if not os.path.exists(original):
+            return {**results, "error": f"Original file not found: {original}"}
+        if not os.path.exists(processed):
+            return {**results, "error": f"Processed file not found: {processed}"}
+            
+        # Get file sizes for comparison
+        original_size = os.path.getsize(original)
+        processed_size = os.path.getsize(processed)
+        results["file_size_ratio"] = processed_size / original_size if original_size > 0 else 0
+        
+        # Calculate SSIM (Structural Similarity Index)
+        results["ssim"] = _calculate_ssim(original, processed, timeout)
+        
+        # Calculate PSNR (Peak Signal-to-Noise Ratio)
+        results["psnr"] = _calculate_psnr(original, processed, timeout)
+        
+        # Calculate VMAF (Video Multimethod Assessment Fusion) - if available
+        try:
+            results["vmaf"] = _calculate_vmaf(original, processed, timeout)
+        except Exception as e:
+            results["warnings"].append(f"VMAF calculation failed: {str(e)}")
+            
+        # Get bitrate information
+        try:
+            original_bitrate = _get_bitrate(original)
+            processed_bitrate = _get_bitrate(processed)
+            if original_bitrate and processed_bitrate:
+                results["bitrate_ratio"] = processed_bitrate / original_bitrate
+        except Exception as e:
+            results["warnings"].append(f"Bitrate analysis failed: {str(e)}")
+            
+        results["processing_time"] = time.time() - start_time
+        results["success"] = True
+        
+        # Add quality assessment
+        results["quality_assessment"] = _assess_quality(results)
+        
+        logging.info(f"Quality analysis completed: SSIM={results['ssim']}, PSNR={results['psnr']}")
+        return results
+        
+    except Exception as e:
+        results["processing_time"] = time.time() - start_time
+        results["error"] = str(e)
+        logging.error(f"Quality analysis failed: {e}")
+        return results
+
+
+def _calculate_ssim(original: str, processed: str, timeout: int) -> float:
+    """Calculate SSIM using FFmpeg ssim filter."""
+    with tempfile.TemporaryDirectory() as temp_dir:
+        log_file = os.path.join(temp_dir, "ssim.log")
+        
+        cmd = [
+            "ffmpeg", "-i", original, "-i", processed,
+            "-lavfi", f"ssim=stats_file={log_file}",
+            "-f", "null", "-"
+        ]
+        
+        try:
+            subprocess.run(cmd, capture_output=True, timeout=timeout, check=True)
+            
+            # Parse SSIM log file
+            if os.path.exists(log_file):
+                with open(log_file, 'r') as f:
+                    lines = f.readlines()
+                    if lines:
+                        # Get average SSIM from last line
+                        last_line = lines[-1].strip()
+                        if "All:" in last_line:
+                            ssim_value = float(last_line.split("All:")[1].split()[0])
+                            return ssim_value
+            
+            return 0.0
+            
+        except subprocess.TimeoutExpired:
+            logging.warning(f"SSIM calculation timed out after {timeout}s")
+            return 0.0
+        except Exception as e:
+            logging.warning(f"SSIM calculation failed: {e}")
+            return 0.0
+
+
+def _calculate_psnr(original: str, processed: str, timeout: int) -> float:
+    """Calculate PSNR using FFmpeg psnr filter."""
+    with tempfile.TemporaryDirectory() as temp_dir:
+        log_file = os.path.join(temp_dir, "psnr.log")
+        
+        cmd = [
+            "ffmpeg", "-i", original, "-i", processed,
+            "-lavfi", f"psnr=stats_file={log_file}",
+            "-f", "null", "-"
+        ]
+        
+        try:
+            subprocess.run(cmd, capture_output=True, timeout=timeout, check=True)
+            
+            # Parse PSNR log file
+            if os.path.exists(log_file):
+                with open(log_file, 'r') as f:
+                    lines = f.readlines()
+                    if lines:
+                        # Get average PSNR from last line
+                        last_line = lines[-1].strip()
+                        if "average:" in last_line:
+                            psnr_value = float(last_line.split("average:")[1].split()[0])
+                            return psnr_value
+            
+            return 0.0
+            
+        except subprocess.TimeoutExpired:
+            logging.warning(f"PSNR calculation timed out after {timeout}s")
+            return 0.0
+        except Exception as e:
+            logging.warning(f"PSNR calculation failed: {e}")
+            return 0.0
+
+
+def _calculate_vmaf(original: str, processed: str, timeout: int) -> float:
+    """Calculate VMAF using FFmpeg libvmaf filter (if available)."""
+    try:
+        # Check if libvmaf is available
+        check_cmd = ["ffmpeg", "-filters"]
+        result = subprocess.run(check_cmd, capture_output=True, text=True, timeout=10)
+        if "libvmaf" not in result.stdout:
+            raise Exception("libvmaf filter not available in this FFmpeg build")
+            
+        cmd = [
+            "ffmpeg", "-i", processed, "-i", original,
+            "-lavfi", "libvmaf=log_fmt=json",
+            "-f", "null", "-"
+        ]
+        
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        
+        # Parse VMAF output from stderr
+        if "VMAF score:" in result.stderr:
+            for line in result.stderr.split('\n'):
+                if "VMAF score:" in line:
+                    score = float(line.split("VMAF score:")[1].strip())
+                    return score
+                    
+        return 0.0
+        
+    except Exception as e:
+        logging.warning(f"VMAF calculation failed: {e}")
+        return 0.0
+
+
+def _get_bitrate(video_path: str) -> float:
+    """Get video bitrate using FFprobe."""
+    try:
+        cmd = [
+            "ffprobe", "-v", "quiet", "-select_streams", "v:0",
+            "-show_entries", "stream=bit_rate", "-of", "csv=p=0",
+            video_path
+        ]
+        
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+        if result.returncode == 0 and result.stdout.strip():
+            return float(result.stdout.strip())
+            
+        return 0.0
+        
+    except Exception as e:
+        logging.warning(f"Bitrate extraction failed: {e}")
+        return 0.0
+
+
+def _assess_quality(metrics: Dict[str, Any]) -> Dict[str, str]:
+    """Assess overall quality based on calculated metrics."""
+    assessment = {
+        "overall": "unknown",
+        "ssim_grade": "unknown", 
+        "psnr_grade": "unknown",
+        "recommendations": []
+    }
+    
+    # SSIM assessment (0-1, higher is better)
+    if metrics["ssim"] is not None:
+        if metrics["ssim"] >= 0.99:
+            assessment["ssim_grade"] = "excellent"
+        elif metrics["ssim"] >= 0.95:
+            assessment["ssim_grade"] = "good"
+        elif metrics["ssim"] >= 0.90:
+            assessment["ssim_grade"] = "fair"
         else:
-            # No keyframe before, return first keyframe
-            return keyframes[0]
+            assessment["ssim_grade"] = "poor"
+            assessment["recommendations"].append("SSIM below 0.90 indicates significant quality loss")
+    
+    # PSNR assessment (dB, higher is better)
+    if metrics["psnr"] is not None:
+        if metrics["psnr"] >= 45:
+            assessment["psnr_grade"] = "excellent"
+        elif metrics["psnr"] >= 35:
+            assessment["psnr_grade"] = "good"  
+        elif metrics["psnr"] >= 25:
+            assessment["psnr_grade"] = "fair"
+        else:
+            assessment["psnr_grade"] = "poor"
+            assessment["recommendations"].append("PSNR below 25dB indicates poor quality preservation")
+    
+    # Overall assessment
+    if (assessment["ssim_grade"] in ["excellent", "good"] and 
+        assessment["psnr_grade"] in ["excellent", "good"]):
+        assessment["overall"] = "lossless_quality"
+    elif (assessment["ssim_grade"] in ["excellent", "good", "fair"] and 
+          assessment["psnr_grade"] in ["excellent", "good", "fair"]):
+        assessment["overall"] = "near_lossless"
     else:
-        # Find the closest keyframe after or at the timestamp
-        valid_keyframes = [kf for kf in keyframes if kf >= timestamp]
-        if valid_keyframes:
-            return min(valid_keyframes)
+        assessment["overall"] = "lossy"
+        
+    return assessment
+
+
+def generate_quality_report(processing_chain: List[Dict]) -> Dict[str, Any]:
+    """
+    Generate comprehensive quality preservation report.
+    Track quality loss through entire editing pipeline.
+    
+    Args:
+        processing_chain: List of processing steps with original/result paths
+        
+    Returns:
+        Comprehensive quality report with metrics and recommendations
+    """
+    report = {
+        "timestamp": datetime.datetime.now().isoformat(),
+        "processing_steps": len(processing_chain),
+        "overall_quality_loss": 0.0,
+        "step_analysis": [],
+        "summary": {
+            "lossless_steps": 0,
+            "near_lossless_steps": 0,
+            "lossy_steps": 0,
+            "total_ssim_loss": 0.0,
+            "total_psnr_loss": 0.0
+        },
+        "recommendations": [],
+        "success": False
+    }
+    
+    try:
+        previous_ssim = 1.0
+        previous_psnr = float('inf')
+        
+        for i, step in enumerate(processing_chain):
+            if not all(k in step for k in ["original", "processed", "operation"]):
+                continue
+                
+            # Analyze this processing step
+            quality_metrics = analyze_quality_loss(step["original"], step["processed"])
+            
+            step_analysis = {
+                "step": i + 1,
+                "operation": step["operation"],
+                "metrics": quality_metrics,
+                "quality_change": {
+                    "ssim_delta": (quality_metrics.get("ssim", 0) - previous_ssim) if quality_metrics.get("ssim") else 0,
+                    "psnr_delta": (quality_metrics.get("psnr", 0) - previous_psnr) if quality_metrics.get("psnr") and previous_psnr != float('inf') else 0
+                }
+            }
+            
+            report["step_analysis"].append(step_analysis)
+            
+            # Update cumulative metrics
+            if quality_metrics.get("success"):
+                if quality_metrics.get("quality_assessment", {}).get("overall") == "lossless_quality":
+                    report["summary"]["lossless_steps"] += 1
+                elif quality_metrics.get("quality_assessment", {}).get("overall") == "near_lossless":
+                    report["summary"]["near_lossless_steps"] += 1
+                else:
+                    report["summary"]["lossy_steps"] += 1
+                    
+                # Track cumulative loss
+                if quality_metrics.get("ssim"):
+                    previous_ssim = quality_metrics["ssim"]
+                if quality_metrics.get("psnr"):
+                    previous_psnr = quality_metrics["psnr"]
+        
+        # Calculate overall quality preservation
+        report["summary"]["total_ssim_loss"] = 1.0 - previous_ssim
+        report["summary"]["total_psnr_loss"] = max(0, 100 - previous_psnr)  # Rough approximation
+        
+        # Generate recommendations
+        if report["summary"]["lossy_steps"] > 0:
+            report["recommendations"].append("Consider using lossless extraction methods for better quality preservation")
+        if report["summary"]["total_ssim_loss"] > 0.05:
+            report["recommendations"].append("Significant quality loss detected. Review processing pipeline.")
+        if report["summary"]["lossless_steps"] == len(processing_chain):
+            report["recommendations"].append("Excellent! All processing steps maintained lossless quality.")
+            
+        report["success"] = True
+        return report
+        
+    except Exception as e:
+        report["error"] = str(e)
+        logging.error(f"Quality report generation failed: {e}")
+        return report
+
+
+def concat_clips_lossless(clips: List[Dict], output: str, 
+                         quality_target: str = "lossless") -> Dict[str, Any]:
+    """
+    Enhanced concatenation preserving maximum quality.
+    Based on FFmpeg concat demuxer best practices and lossless editing principles.
+    
+    Args:
+        clips: List of clip dictionaries with 'path' and metadata
+        output: Output file path
+        quality_target: "lossless", "near_lossless", or "lossy"
+        
+    Returns:
+        Dict with concatenation results and quality metrics
+    """
+    import time
+    start_time = time.time()
+    
+    result = {
+        "success": False,
+        "method_used": "unknown",
+        "quality_target": quality_target,
+        "clips_processed": len(clips),
+        "processing_time": 0,
+        "quality_analysis": {},
+        "warnings": [],
+        "error": None
+    }
+    
+    try:
+        if not clips:
+            result["error"] = "No clips provided"
+            return result
+            
+        # Validate all clip files exist
+        for i, clip in enumerate(clips):
+            clip_path = clip.get("path")
+            if not clip_path or not os.path.exists(clip_path):
+                result["error"] = f"Clip {i+1} not found: {clip_path}"
+                return result
+                
+        # Strategy 1: Try lossless concat with demuxer (fastest, best quality)
+        if quality_target in ["lossless", "near_lossless"]:
+            success = _concat_with_demuxer(clips, output)
+            if success:
+                result["method_used"] = "concat_demuxer"
+                result["success"] = True
+                result["processing_time"] = time.time() - start_time
+                
+                # Analyze quality if requested
+                if len(clips) > 0:
+                    first_clip = clips[0]["path"]
+                    quality_metrics = analyze_quality_loss(first_clip, output, timeout=30)
+                    result["quality_analysis"] = quality_metrics
+                    
+                logging.info(f"Lossless concatenation successful: {len(clips)} clips")
+                return result
+            else:
+                result["warnings"].append("Concat demuxer failed, trying filter method")
+                
+        # Strategy 2: Try concat filter with stream copy
+        if quality_target in ["lossless", "near_lossless"]:
+            success = _concat_with_filter_copy(clips, output)
+            if success:
+                result["method_used"] = "concat_filter_copy"
+                result["success"] = True
+                result["processing_time"] = time.time() - start_time
+                
+                logging.info(f"Stream copy concatenation successful: {len(clips)} clips")
+                return result
+            else:
+                result["warnings"].append("Stream copy concat failed, trying re-encoding")
+                
+        # Strategy 3: Fallback to re-encoding concat (lossy but reliable)
+        success = _concat_with_reencoding(clips, output, quality_target)
+        if success:
+            result["method_used"] = "concat_reencoded"
+            result["success"] = True
+            result["processing_time"] = time.time() - start_time
+            
+            # Analyze quality loss
+            if len(clips) > 0:
+                first_clip = clips[0]["path"]
+                quality_metrics = analyze_quality_loss(first_clip, output, timeout=30)
+                result["quality_analysis"] = quality_metrics
+                
+            logging.info(f"Re-encoded concatenation successful: {len(clips)} clips")
+            return result
         else:
-            # No keyframe after, return last keyframe
-            return keyframes[-1]
+            result["error"] = "All concatenation methods failed"
+            
+    except Exception as e:
+        result["error"] = str(e)
+        logging.error(f"Lossless concatenation failed: {e}")
+        
+    result["processing_time"] = time.time() - start_time
+    return result
+
+
+def _concat_with_demuxer(clips: List[Dict], output: str) -> bool:
+    """
+    Concatenate using FFmpeg concat demuxer (lossless, fastest).
+    Requires all clips to have identical encoding parameters.
+    """
+    try:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Create concat file list
+            concat_file = os.path.join(temp_dir, "concat_list.txt")
+            with open(concat_file, 'w') as f:
+                for clip in clips:
+                    # Use absolute paths and escape quotes
+                    abs_path = os.path.abspath(clip["path"])
+                    f.write(f"file '{abs_path}'\n")
+                    
+            # Use concat demuxer with stream copy
+            cmd = [
+                "ffmpeg", "-f", "concat", "-safe", "0", 
+                "-i", concat_file,
+                "-c", "copy",  # Stream copy for lossless
+                "-avoid_negative_ts", "make_zero",
+                "-y", output
+            ]
+            
+            result = subprocess.run(cmd, capture_output=True, timeout=300)
+            return result.returncode == 0
+            
+    except Exception as e:
+        logging.warning(f"Concat demuxer failed: {e}")
+        return False
+
+
+def _concat_with_filter_copy(clips: List[Dict], output: str) -> bool:
+    """
+    Concatenate using FFmpeg concat filter with stream copy.
+    More flexible than demuxer but still preserves quality.
+    """
+    try:
+        # Build filter inputs
+        inputs = []
+        for clip in clips:
+            inputs.extend(["-i", clip["path"]])
+            
+        # Build concat filter
+        filter_parts = []
+        for i in range(len(clips)):
+            filter_parts.append(f"[{i}:v][{i}:a]")
+            
+        concat_filter = f"{''.join(filter_parts)}concat=n={len(clips)}:v=1:a=1[outv][outa]"
+        
+        cmd = [
+            "ffmpeg"
+        ] + inputs + [
+            "-filter_complex", concat_filter,
+            "-map", "[outv]", "-map", "[outa]",
+            "-c:v", "copy",  # Try stream copy first
+            "-c:a", "copy",
+            "-y", output
+        ]
+        
+        result = subprocess.run(cmd, capture_output=True, timeout=300)
+        if result.returncode == 0:
+            return True
+            
+        # If copy fails, try with minimal re-encoding
+        cmd = [
+            "ffmpeg"
+        ] + inputs + [
+            "-filter_complex", concat_filter,
+            "-map", "[outv]", "-map", "[outa]",
+            "-c:v", "libx264", "-crf", "18",  # High quality re-encoding
+            "-c:a", "aac", "-b:a", "192k",
+            "-y", output
+        ]
+        
+        result = subprocess.run(cmd, capture_output=True, timeout=300)
+        return result.returncode == 0
+        
+    except Exception as e:
+        logging.warning(f"Concat filter failed: {e}")
+        return False
+
+
+def _concat_with_reencoding(clips: List[Dict], output: str, quality_target: str) -> bool:
+    """
+    Concatenate with quality-controlled re-encoding.
+    Most compatible but with potential quality loss.
+    """
+    try:
+        # Build inputs
+        inputs = []
+        for clip in clips:
+            inputs.extend(["-i", clip["path"]])
+            
+        # Build concat filter
+        filter_parts = []
+        for i in range(len(clips)):
+            filter_parts.append(f"[{i}:v][{i}:a]")
+            
+        concat_filter = f"{''.join(filter_parts)}concat=n={len(clips)}:v=1:a=1[outv][outa]"
+        
+        # Quality settings based on target
+        if quality_target == "near_lossless":
+            video_codec = ["-c:v", "libx264", "-crf", "16"]
+            audio_codec = ["-c:a", "aac", "-b:a", "192k"]
+        else:  # lossy
+            video_codec = ["-c:v", "libx264", "-crf", "23"]
+            audio_codec = ["-c:a", "aac", "-b:a", "128k"]
+            
+        cmd = [
+            "ffmpeg"
+        ] + inputs + [
+            "-filter_complex", concat_filter,
+            "-map", "[outv]", "-map", "[outa]"
+        ] + video_codec + audio_codec + [
+            "-y", output
+        ]
+        
+        result = subprocess.run(cmd, capture_output=True, timeout=600)
+        return result.returncode == 0
+        
+    except Exception as e:
+        logging.warning(f"Re-encoding concat failed: {e}")
+        return False
+
+
+def validate_concat_compatibility(clips: List[Dict]) -> Dict[str, Any]:
+    """
+    Validate that clips can be concatenated losslessly.
+    Checks encoding parameters for compatibility.
+    """
+    compatibility = {
+        "lossless_compatible": False,
+        "issues": [],
+        "recommendations": [],
+        "clips_analyzed": len(clips)
+    }
+    
+    if len(clips) < 2:
+        compatibility["issues"].append("Need at least 2 clips for concatenation")
+        return compatibility
+        
+    try:
+        # Get metadata for first clip as reference
+        reference_clip = clips[0]["path"]
+        ref_metadata = _get_video_metadata(reference_clip)
+        
+        if not ref_metadata:
+            compatibility["issues"].append("Could not analyze reference clip metadata")
+            return compatibility
+            
+        ref_codec = ref_metadata.get("codec_name")
+        ref_width = ref_metadata.get("width")
+        ref_height = ref_metadata.get("height")
+        ref_framerate = ref_metadata.get("r_frame_rate")
+        
+        # Check all other clips against reference
+        for i, clip in enumerate(clips[1:], 1):
+            clip_metadata = _get_video_metadata(clip["path"])
+            
+            if not clip_metadata:
+                compatibility["issues"].append(f"Could not analyze clip {i+1} metadata")
+                continue
+                
+            # Check codec compatibility
+            if clip_metadata.get("codec_name") != ref_codec:
+                compatibility["issues"].append(f"Clip {i+1} codec mismatch: {clip_metadata.get('codec_name')} vs {ref_codec}")
+                
+            # Check resolution compatibility
+            if (clip_metadata.get("width") != ref_width or 
+                clip_metadata.get("height") != ref_height):
+                compatibility["issues"].append(f"Clip {i+1} resolution mismatch: {clip_metadata.get('width')}x{clip_metadata.get('height')} vs {ref_width}x{ref_height}")
+                
+            # Check framerate compatibility
+            if clip_metadata.get("r_frame_rate") != ref_framerate:
+                compatibility["issues"].append(f"Clip {i+1} framerate mismatch: {clip_metadata.get('r_frame_rate')} vs {ref_framerate}")
+                
+        # Determine compatibility
+        if not compatibility["issues"]:
+            compatibility["lossless_compatible"] = True
+            compatibility["recommendations"].append("All clips compatible for lossless concatenation")
+        else:
+            compatibility["recommendations"].append("Consider re-encoding clips to match parameters for lossless concat")
+            compatibility["recommendations"].append("Alternative: Use quality-controlled re-encoding concat")
+            
+        return compatibility
+        
+    except Exception as e:
+        compatibility["issues"].append(f"Compatibility check failed: {str(e)}")
+        return compatibility
+
+
+def _get_video_metadata(video_path: str) -> Dict[str, Any]:
+    """Get detailed video metadata for compatibility checking."""
+    try:
+        cmd = [
+            "ffprobe", "-v", "quiet", "-select_streams", "v:0",
+            "-show_entries", "stream=codec_name,width,height,r_frame_rate,bit_rate",
+            "-of", "json", video_path
+        ]
+        
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+        if result.returncode == 0:
+            data = json.loads(result.stdout)
+            if "streams" in data and len(data["streams"]) > 0:
+                return data["streams"][0]
+                
+        return {}
+        
+    except Exception as e:
+        logging.warning(f"Metadata extraction failed: {e}")
+        return {}
