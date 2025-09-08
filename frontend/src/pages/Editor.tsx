@@ -386,136 +386,16 @@ export default function Editor() {
           </div>
         )}
 
-        {activeVideo && (
-          <div className="marking-controls" style={{ marginTop: "2rem" }}>
-              <button 
-                  onClick={() => setMarkedIn(playerCurrentTime)}
-                  className="btn"
-                  disabled={!activeVideo}
-              >
-                  📍 Mark IN ({markedIn !== null ? formatTime(markedIn) : "--:--"})
-              </button>
-              <button 
-                  onClick={() => setMarkedOut(playerCurrentTime)}
-                  className="btn"
-                  disabled={!activeVideo}
-              >
-                  📍 Mark OUT ({markedOut !== null ? formatTime(markedOut) : "--:--"})
-              </button>
-              <button 
-                  onClick={clearMarks}
-                  className="btn"
-                  disabled={!activeVideo}
-              >
-                  🗑️ Clear Marks
-              </button>
-            <button 
-                onClick={handleAddClip} 
-                className="btn"
-                disabled={!activeVideoId || markedIn === null || markedOut === null || markedOut <= markedIn || (activeVideo && markedOut > activeVideo.duration!) || addClip.isPending}
-            >
-                  {addClip.isPending ? "Adding..." : "➕ Add to Timeline"}
-              </button>
 
-              {/* Professional Lossless Extraction Tools */}
-              <button 
-                  onClick={() => {
-                    if (activeVideoId && markedIn !== null && markedOut !== null) {
-                      losslessExtractMutation.mutate({ 
-                        video_id: activeVideoId, 
-                        start: markedIn, 
-                        end: markedOut 
-                      });
-                    }
-                  }}
-                  className="btn"
-                  style={{ 
-                    backgroundColor: "#10b981", 
-                    color: "white", 
-                    marginLeft: "0.5rem",
-                    position: "relative",
-                    overflow: "hidden"
-                  }}
-                  disabled={!activeVideoId || markedIn === null || markedOut === null || markedOut <= markedIn || losslessExtractMutation.isPending}
-                  title="Extract with maximum quality preservation - uses stream copy when possible"
-              >
-                  {losslessExtractMutation.isPending ? (
-                    <>⏳ Extracting...</>
-                  ) : (
-                    <>🎯 Lossless Extract</>
-                  )}
-                  {/* Quality indicator */}
-                  {keyframeData && markedIn !== null && markedOut !== null && (
-                    <div style={{
-                      position: "absolute",
-                      top: "-2px",
-                      right: "-2px",
-                      width: "8px",
-                      height: "8px",
-                      borderRadius: "50%",
-                      backgroundColor: (() => {
-                        // Check if selection is keyframe-aligned
-                        const nearestStartKeyframe = keyframeData.keyframes.find(kf => Math.abs(kf - markedIn) < 0.1);
-                        const nearestEndKeyframe = keyframeData.keyframes.find(kf => Math.abs(kf - markedOut) < 0.1);
-                        return nearestStartKeyframe && nearestEndKeyframe ? "#22c55e" : "#f59e0b";
-                      })(),
-                      border: "2px solid white"
-                    }} />
-                  )}
-              </button>
-
-              <button 
-                  onClick={() => {
-                    if (activeVideoId && markedIn !== null && markedOut !== null) {
-                      smartCutMutation.mutate({ 
-                        video_id: activeVideoId, 
-                        start: markedIn, 
-                        end: markedOut 
-                      });
-                    }
-                  }}
-                  className="btn"
-                  style={{ 
-                    backgroundColor: "#f59e0b", 
-                    color: "white", 
-                    marginLeft: "0.5rem",
-                    position: "relative"
-                  }}
-                  disabled={!activeVideoId || markedIn === null || markedOut === null || markedOut <= markedIn || smartCutMutation.isPending}
-                  title="Frame-accurate cutting with minimal quality loss"
-              >
-                  {smartCutMutation.isPending ? (
-                    <>⏳ Cutting...</>
-                  ) : (
-                    <>✂️ Smart Cut</>
-                  )}
-                  {/* Precision indicator */}
-                  <div style={{
-                    position: "absolute",
-                    top: "-2px",
-                    right: "-2px",
-                    width: "8px",
-                    height: "8px",
-                    borderRadius: "50%",
-                    backgroundColor: "#ef4444",
-                    border: "2px solid white"
-                  }} />
-            </button>
-              <div className="marks-display">
-                {activeVideo?.filename} {formatTime(playerCurrentTime)} | 
-                Range: {markedIn !== null ? formatTime(markedIn) : "--:--"} to {markedOut !== null ? formatTime(markedOut) : "--:--"}
-              </div>
-          </div>
-        )}
-
-        {/* Integrated Professional Timeline */}
-        <div style={{ 
+        {/* 🎬 Multi-Track Timeline - Integrated Interface */}
+        <div className="timeline-integrated-header" style={{ 
           marginTop: "1rem",
           border: "1px solid #444",
           borderRadius: "8px",
           backgroundColor: "#2a2a2a"
         }}>
-          <div style={{
+          {/* Timeline Title Section */}
+          <div className="timeline-title-section" style={{
             display: "flex",
             justifyContent: "space-between",
             alignItems: "center",
@@ -524,11 +404,132 @@ export default function Editor() {
             backgroundColor: "#1e1e1e"
           }}>
             <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
-              <span style={{ fontSize: "0.9rem", color: "#888" }}>
+              <h3 style={{ margin: 0, fontSize: "1.1rem", color: "#eee" }}>🎬 Multi-Track Timeline</h3>
+              <span className="timeline-info" style={{ fontSize: "0.9rem", color: "#888" }}>
                 {timelineClips.length} clips | {activeVideo?.filename || 'No video selected'}
               </span>
             </div>
-            <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+          </div>
+
+          {/* Timeline Controls Rows */}
+          <div className="timeline-controls-row" style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: "0.5rem",
+            padding: "1rem"
+          }}>
+            {/* Row 1: Marking & Adding */}
+            <div className="marking-controls" style={{
+              display: "flex",
+              gap: "0.5rem",
+              flexWrap: "wrap",
+              alignItems: "center"
+            }}>
+              <button 
+                onClick={() => setMarkedIn(playerCurrentTime)}
+                className="btn"
+                style={{ 
+                  padding: "0.375rem 0.75rem", 
+                  fontSize: "0.875rem", 
+                  whiteSpace: "nowrap" 
+                }}
+                disabled={!activeVideo}
+              >
+                📍 Mark IN ({markedIn !== null ? formatTime(markedIn) : "--:--"})
+              </button>
+              <button 
+                onClick={() => setMarkedOut(playerCurrentTime)}
+                className="btn"
+                style={{ 
+                  padding: "0.375rem 0.75rem", 
+                  fontSize: "0.875rem", 
+                  whiteSpace: "nowrap" 
+                }}
+                disabled={!activeVideo}
+              >
+                📍 Mark OUT ({markedOut !== null ? formatTime(markedOut) : "--:--"})
+              </button>
+              <button 
+                onClick={clearMarks}
+                className="btn"
+                style={{ 
+                  padding: "0.375rem 0.75rem", 
+                  fontSize: "0.875rem", 
+                  whiteSpace: "nowrap" 
+                }}
+                disabled={!activeVideo}
+              >
+                🗑️ Clear Marks
+              </button>
+              <button 
+                onClick={handleAddClip} 
+                className="btn"
+                style={{ 
+                  padding: "0.375rem 0.75rem", 
+                  fontSize: "0.875rem", 
+                  whiteSpace: "nowrap",
+                  backgroundColor: "#007bff",
+                  color: "white"
+                }}
+                disabled={!activeVideoId || markedIn === null || markedOut === null || markedOut <= markedIn || (activeVideo && markedOut > activeVideo.duration!) || addClip.isPending}
+              >
+                {addClip.isPending ? "Adding..." : "➕ Add to Timeline"}
+              </button>
+            </div>
+
+            {/* Row 2: Processing & Building */}
+            <div className="processing-controls" style={{
+              display: "flex",
+              gap: "0.5rem",
+              flexWrap: "wrap",
+              alignItems: "center"
+            }}>
+              <button 
+                onClick={() => {
+                  if (activeVideoId && markedIn !== null && markedOut !== null) {
+                    losslessExtractMutation.mutate({ 
+                      video_id: activeVideoId, 
+                      start: markedIn, 
+                      end: markedOut 
+                    });
+                  }
+                }}
+                className="btn"
+                style={{ 
+                  padding: "0.375rem 0.75rem", 
+                  fontSize: "0.875rem", 
+                  whiteSpace: "nowrap",
+                  backgroundColor: "#10b981", 
+                  color: "white"
+                }}
+                disabled={!activeVideoId || markedIn === null || markedOut === null || markedOut <= markedIn || losslessExtractMutation.isPending}
+                title="Extract with maximum quality preservation"
+              >
+                {losslessExtractMutation.isPending ? "⏳ Extracting..." : "🎯 Lossless Extract"}
+              </button>
+              <button 
+                onClick={() => {
+                  if (activeVideoId && markedIn !== null && markedOut !== null) {
+                    smartCutMutation.mutate({ 
+                      video_id: activeVideoId, 
+                      start: markedIn, 
+                      end: markedOut 
+                    });
+                  }
+                }}
+                className="btn"
+                style={{ 
+                  padding: "0.375rem 0.75rem", 
+                  fontSize: "0.875rem", 
+                  whiteSpace: "nowrap",
+                  backgroundColor: "#f59e0b", 
+                  color: "white"
+                }}
+                disabled={!activeVideoId || markedIn === null || markedOut === null || markedOut <= markedIn || smartCutMutation.isPending}
+                title="Frame-accurate cutting with minimal quality loss"
+              >
+                {smartCutMutation.isPending ? "⏳ Cutting..." : "✂️ Smart Cut"}
+              </button>
               <button 
                 onClick={() => {
                   fetch('/api/projects/build', {
@@ -554,8 +555,9 @@ export default function Editor() {
                 }}
                 className="btn"
                 style={{ 
-                  padding: "0.25rem 0.75rem", 
-                  fontSize: "0.8rem",
+                  padding: "0.375rem 0.75rem", 
+                  fontSize: "0.875rem", 
+                  whiteSpace: "nowrap",
                   backgroundColor: "#007bff",
                   color: "white"
                 }}
@@ -588,8 +590,9 @@ export default function Editor() {
                 }}
                 className="btn"
                 style={{ 
-                  padding: "0.25rem 0.75rem", 
-                  fontSize: "0.8rem",
+                  padding: "0.375rem 0.75rem", 
+                  fontSize: "0.875rem", 
+                  whiteSpace: "nowrap",
                   backgroundColor: "#8b5cf6",
                   color: "white"
                 }}
@@ -600,7 +603,11 @@ export default function Editor() {
               <button 
                 onClick={() => clearTimelineMutation.mutate()}
                 className="btn btn-danger"
-                style={{ padding: "0.25rem 0.5rem", fontSize: "0.8rem" }}
+                style={{ 
+                  padding: "0.375rem 0.75rem", 
+                  fontSize: "0.875rem", 
+                  whiteSpace: "nowrap"
+                }}
                 disabled={clearTimelineMutation.isPending || (timelineClips?.length || 0) === 0}
               >
                 Clear Timeline
