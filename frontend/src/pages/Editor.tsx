@@ -13,6 +13,10 @@ import {
 import { useEditorStore } from "../stores/editorStore";
 import VideoPlayer from "../components/VideoPlayer";
 import Timeline from "../components/Timeline";
+import { MultiTrackTimeline } from '../components/MultiTrackTimeline';
+import { AudioWaveformDemo } from '../components/AudioWaveformDemo';
+import { AudioEffectsPanel } from '../components/AudioEffectsPanel';
+import { AudioProcessingHistory } from '../components/AudioProcessingHistory';
 import LosslessIndicator from "../components/LosslessIndicator";
 import KeyframeTimeline from "../components/KeyframeTimeline";
 import { formatTime } from "../utils/time";
@@ -264,7 +268,7 @@ export default function Editor() {
       <section className="editor-section">
         <div style={{ display: "flex", alignItems: "center", gap: "1rem", marginBottom: "1rem" }}>
           <span>📁 Upload Video</span>
-          <input type="file" accept="video/*" onChange={handleFileUpload} disabled={upload.isPending} />
+        <input type="file" accept="video/*" onChange={handleFileUpload} disabled={upload.isPending} />
           {upload.isPending && <span>Uploading...</span>}
         </div>
         {isLoadingVideo ? (
@@ -412,11 +416,11 @@ export default function Editor() {
               >
                   {clearTimelineMutation.isPending ? "Clearing..." : "Clear Timeline"}
               </button>
-              <button 
-                  onClick={handleAddClip} 
-                  className="btn"
-                  disabled={!activeVideoId || markedIn === null || markedOut === null || markedOut <= markedIn || (activeVideo && markedOut > activeVideo.duration!) || addClip.isPending}
-              >
+            <button 
+                onClick={handleAddClip} 
+                className="btn"
+                disabled={!activeVideoId || markedIn === null || markedOut === null || markedOut <= markedIn || (activeVideo && markedOut > activeVideo.duration!) || addClip.isPending}
+            >
                   {addClip.isPending ? "Adding..." : "➕ Add to Timeline"}
               </button>
 
@@ -503,7 +507,7 @@ export default function Editor() {
                     backgroundColor: "#ef4444",
                     border: "2px solid white"
                   }} />
-              </button>
+            </button>
               <div className="marks-display">
                 {activeVideo?.filename} {formatTime(playerCurrentTime)} | 
                 Range: {markedIn !== null ? formatTime(markedIn) : "--:--"} to {markedOut !== null ? formatTime(markedOut) : "--:--"}
@@ -521,6 +525,42 @@ export default function Editor() {
           />
         </div>
       </section>
+
+      {/* Multi-Track Timeline Section */}
+        <section className="editor-section">
+          <div style={{ marginBottom: "1rem" }}>
+            <h2 style={{ 
+              margin: "0 0 1rem 0", 
+              fontSize: "1.2rem", 
+              color: "#374151",
+              borderBottom: "2px solid #e5e7eb",
+              paddingBottom: "0.5rem"
+            }}>
+              🎬 Professional Timeline
+            </h2>
+            <MultiTrackTimeline />
+        </div>
+      </section>
+
+        <section className="editor-section">
+          <AudioWaveformDemo />
+        </section>
+
+        <section className="editor-section">
+          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '1.5rem' }}>
+            <AudioEffectsPanel 
+              videoId={currentVideo?.id}
+              onProcessingComplete={(result) => {
+                // Add to processing history
+                if ((window as any).addAudioProcessingToHistory) {
+                  (window as any).addAudioProcessingToHistory(result);
+                }
+                console.log('Audio processing completed:', result);
+              }}
+            />
+            <AudioProcessingHistory />
+          </div>
+        </section>
 
       <section className="editor-section">
         <div className="export-controls" style={{ display: "flex", gap: "1rem", alignItems: "center" }}>

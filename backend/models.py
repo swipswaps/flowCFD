@@ -1,5 +1,5 @@
 import uuid
-from sqlalchemy import Column, String, Float, Integer, DateTime, ForeignKey, Text
+from sqlalchemy import Column, String, Float, Integer, DateTime, ForeignKey, Text, Boolean
 from sqlalchemy.orm import relationship, Mapped, mapped_column
 from datetime import datetime
 from database import Base
@@ -19,14 +19,51 @@ class Video(Base):
     clips: Mapped[list["Clip"]] = relationship("Clip", back_populates="video", cascade="all, delete-orphan")
     exports: Mapped[list["Export"]] = relationship("Export", back_populates="video", cascade="all, delete-orphan")
 
+class Track(Base):
+    __tablename__ = "tracks"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    project_id: Mapped[str] = mapped_column(String, default="default")
+    track_type: Mapped[str] = mapped_column(String, default="video")  # 'video', 'audio', 'overlay'
+    track_name: Mapped[str] = mapped_column(String, nullable=False)
+    track_order: Mapped[int] = mapped_column(Integer, default=1)
+    is_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    is_locked: Mapped[bool] = mapped_column(Boolean, default=False)
+    volume: Mapped[float] = mapped_column(Float, default=1.0)
+    opacity: Mapped[float] = mapped_column(Float, default=1.0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    clips: Mapped[list["Clip"]] = relationship("Clip", back_populates="track", cascade="all, delete-orphan")
+    audio_clips: Mapped[list["AudioClip"]] = relationship("AudioClip", back_populates="track", cascade="all, delete-orphan")
+
 class Clip(Base):
     __tablename__ = "clips"
     id: Mapped[str] = mapped_column(String, primary_key=True, default=uid)
     video_id: Mapped[str] = mapped_column(String, ForeignKey("videos.id", ondelete="CASCADE"))
+    track_id: Mapped[int] = mapped_column(Integer, ForeignKey("tracks.id", ondelete="CASCADE"), default=1)
     start_time: Mapped[float] = mapped_column(Float, nullable=False)
     end_time: Mapped[float] = mapped_column(Float, nullable=False)
     order_index: Mapped[int] = mapped_column(Integer, default=0)
+    timeline_position: Mapped[float] = mapped_column(Float, default=0.0)
+    z_index: Mapped[int] = mapped_column(Integer, default=0)
+    transition_in: Mapped[str] = mapped_column(String, default="none")
+    transition_out: Mapped[str] = mapped_column(String, default="none")
     video: Mapped["Video"] = relationship("Video", back_populates="clips")
+    track: Mapped["Track"] = relationship("Track", back_populates="clips")
+
+class AudioClip(Base):
+    __tablename__ = "audio_clips"
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=uid)
+    video_id: Mapped[str] = mapped_column(String, ForeignKey("videos.id", ondelete="CASCADE"))
+    track_id: Mapped[int] = mapped_column(Integer, ForeignKey("tracks.id", ondelete="CASCADE"))
+    start_time: Mapped[float] = mapped_column(Float, nullable=False)
+    end_time: Mapped[float] = mapped_column(Float, nullable=False)
+    timeline_position: Mapped[float] = mapped_column(Float, nullable=False)
+    volume: Mapped[float] = mapped_column(Float, default=1.0)
+    fade_in: Mapped[float] = mapped_column(Float, default=0.0)
+    fade_out: Mapped[float] = mapped_column(Float, default=0.0)
+    audio_effects: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON array of effects
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    video: Mapped["Video"] = relationship("Video")
+    track: Mapped["Track"] = relationship("Track", back_populates="audio_clips")
 
 class Export(Base):
     __tablename__ = "exports"
