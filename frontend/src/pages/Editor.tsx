@@ -409,13 +409,6 @@ export default function Editor() {
               >
                   🗑️ Clear Marks
               </button>
-              <button 
-                  onClick={() => clearTimelineMutation.mutate()}
-                  className="btn btn-danger"
-                  disabled={clearTimelineMutation.isPending || (timelineClips?.length || 0) === 0}
-              >
-                  {clearTimelineMutation.isPending ? "Clearing..." : "Clear Timeline"}
-              </button>
             <button 
                 onClick={handleAddClip} 
                 className="btn"
@@ -515,30 +508,119 @@ export default function Editor() {
           </div>
         )}
 
-        <div style={{ marginTop: "1rem" }}>
-          <Timeline 
-            clips={timelineClips} 
-            videoDuration={activeVideo?.duration || 0} 
-            activeVideo={activeVideo ?? null}
-            isGlobalTimeline={true}
-            onClipPlay={handleClipPlay}
-          />
-        </div>
-      </section>
-
-      {/* Multi-Track Timeline Section */}
-        <section className="editor-section">
-          <div style={{ marginBottom: "1rem" }}>
-            <h2 style={{ 
-              margin: "0 0 1rem 0", 
-              fontSize: "1.2rem", 
-              color: "#374151",
-              borderBottom: "2px solid #e5e7eb",
-              paddingBottom: "0.5rem"
-            }}>
-              🎬 Professional Timeline
-            </h2>
+        {/* Integrated Professional Timeline */}
+        <div style={{ 
+          marginTop: "1rem",
+          border: "1px solid #444",
+          borderRadius: "8px",
+          backgroundColor: "#2a2a2a"
+        }}>
+          <div style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            padding: "0.75rem 1rem",
+            borderBottom: "1px solid #444",
+            backgroundColor: "#1e1e1e"
+          }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
+              <span style={{ fontSize: "0.9rem", color: "#888" }}>
+                {timelineClips.length} clips | {activeVideo?.filename || 'No video selected'}
+              </span>
+            </div>
+            <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+              <button 
+                onClick={() => {
+                  fetch('/api/projects/build', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ quality_target: 'balanced' })
+                  })
+                  .then(response => response.json())
+                  .then(data => {
+                    if (data.success) {
+                      toast.success(`Build complete: ${data.processing_time.toFixed(1)}s`);
+                      const a = document.createElement('a');
+                      a.href = data.download_url;
+                      a.download = data.output_file;
+                      a.click();
+                    } else {
+                      toast.error('Build failed');
+                    }
+                  })
+                  .catch(error => {
+                    toast.error(`Build error: ${error.message}`);
+                  });
+                }}
+                className="btn"
+                style={{ 
+                  padding: "0.25rem 0.75rem", 
+                  fontSize: "0.8rem",
+                  backgroundColor: "#007bff",
+                  color: "white"
+                }}
+                disabled={timelineClips.length === 0}
+              >
+                🔧 Build Timeline
+              </button>
+              <button 
+                onClick={() => {
+                  fetch('/api/timeline/build-lossless', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ quality_target: 'lossless' })
+                  })
+                  .then(response => response.json())
+                  .then(data => {
+                    if (data.success) {
+                      toast.success(`✅ Lossless build: ${data.method_used} | ${data.processing_time.toFixed(1)}s`);
+                      const a = document.createElement('a');
+                      a.href = data.download_url;
+                      a.download = data.output_file;
+                      a.click();
+                    } else {
+                      toast.error('Lossless build failed');
+                    }
+                  })
+                  .catch(error => {
+                    toast.error(`Build error: ${error.message}`);
+                  });
+                }}
+                className="btn"
+                style={{ 
+                  padding: "0.25rem 0.75rem", 
+                  fontSize: "0.8rem",
+                  backgroundColor: "#8b5cf6",
+                  color: "white"
+                }}
+                disabled={timelineClips.length === 0}
+              >
+                🌟 Lossless Build
+              </button>
+              <button 
+                onClick={() => clearTimelineMutation.mutate()}
+                className="btn btn-danger"
+                style={{ padding: "0.25rem 0.5rem", fontSize: "0.8rem" }}
+                disabled={clearTimelineMutation.isPending || (timelineClips?.length || 0) === 0}
+              >
+                Clear Timeline
+              </button>
+            </div>
+          </div>
+          <div style={{ padding: "1rem" }}>
             <MultiTrackTimeline />
+            {timelineClips.length > 0 && (
+              <div style={{ marginTop: "1rem" }}>
+                <Timeline 
+                  clips={timelineClips} 
+                  videoDuration={activeVideo?.duration || 0} 
+                  activeVideo={activeVideo ?? null}
+                  isGlobalTimeline={true}
+                  onClipPlay={handleClipPlay}
+                />
+              </div>
+            )}
+          </div>
         </div>
       </section>
 
@@ -562,68 +644,6 @@ export default function Editor() {
           </div>
       </section>
 
-      <section className="editor-section">
-        <div className="export-controls" style={{ display: "flex", gap: "1rem", alignItems: "center" }}>
-            <button
-                onClick={handleBuildProject}
-                className="btn"
-                disabled={!activeVideoId || timelineClips.length === 0 || buildProjectMutation.isPending}
-                title="Standard timeline build (compatible but may lose quality)"
-            >
-                {buildProjectMutation.isPending ? "Building..." : "🚀 Build Timeline"}
-            </button>
-            
-            <button
-                onClick={() => {
-                  // Use professional lossless timeline build
-                  fetch('/api/timeline/build-lossless', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ quality_target: 'lossless' })
-                  })
-                  .then(response => response.json())
-                  .then(data => {
-                    if (data.success) {
-                      toast.success(`✅ Lossless build: ${data.method_used} | ${data.processing_time.toFixed(1)}s`);
-                      // Auto-download
-                      const a = document.createElement('a');
-                      a.href = data.download_url;
-                      a.download = data.output_file;
-                      a.click();
-                    } else {
-                      toast.error('Lossless build failed');
-                    }
-                  })
-                  .catch(error => {
-                    toast.error(`Build error: ${error.message}`);
-                  });
-                }}
-                className="btn"
-                style={{ 
-                  backgroundColor: "#8b5cf6", 
-                  color: "white", 
-                  position: "relative",
-                  fontWeight: "600"
-                }}
-                disabled={timelineClips.length === 0}
-                title="Professional lossless timeline build with maximum quality preservation"
-            >
-                🌟 Lossless Build
-                {/* Professional quality indicator */}
-                <div style={{
-                  position: "absolute",
-                  top: "-3px",
-                  right: "-3px",
-                  width: "10px",
-                  height: "10px",
-                  borderRadius: "50%",
-                  backgroundColor: "#22c55e",
-                  border: "2px solid white",
-                  boxShadow: "0 0 4px rgba(34, 197, 94, 0.5)"
-                }} />
-            </button>
-        </div>
-      </section>
     </div>
   );
 }
