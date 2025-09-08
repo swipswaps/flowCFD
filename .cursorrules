@@ -69,6 +69,72 @@
 # - Rollbacks restore functionality
 # - Any functionality works without proof
 
+# --- RULE 9: SYSTEMATIC ENVIRONMENT VERIFICATION ---
+# Before ANY testing, I MUST verify the complete environment:
+# 1. Check virtual environment exists (.venv directory present)
+# 2. Activate virtual environment and verify Python path
+# 3. Test all imports with explicit error capture
+# 4. Verify all dependencies are installed in correct environment
+# 5. Check for missing critical dependencies (e.g. pydantic-settings)
+# 6. Kill zombie/defunct processes before starting new ones
+
+# --- RULE 10: ANTI-STALLING PROTOCOL ---
+# I MUST NOT stall on broken tests. Instead I MUST:
+# 1. Set explicit time limits for ALL commands (use timeout)
+# 2. Capture and analyze exact error messages verbatim
+# 3. Research known solutions for common errors immediately
+# 4. Use evidence-based debugging instead of repeated failed attempts
+# 5. Document exact error conditions with system logs
+# 6. Provide status updates every 30 seconds during long operations
+
+# --- RULE 11: ROOT CAUSE ANALYSIS MANDATE ---
+# When tests fail, I MUST perform systematic diagnosis:
+# 1. Check process status (ps aux | grep process_name)
+# 2. Check port availability (ss -tlnp | grep :port)
+# 3. Verify HTTP response codes with curl -w flags
+# 4. Test import/dependency issues with explicit Python tests
+# 5. Check for authentication/authorization conflicts
+# 6. Examine system logs and provide exact error messages
+# 7. Use parallel tool calls for comprehensive information gathering
+
+# --- RULE 12: FRONTEND/BACKEND INTEGRATION VERIFICATION ---
+# For full-stack applications, I MUST verify:
+# 1. Backend API endpoints respond with correct HTTP codes
+# 2. Frontend can successfully connect to backend
+# 3. Upload functionality works end-to-end with actual files
+# 4. Authentication/authorization headers are correct or removed
+# 5. CORS and network connectivity between services
+# 6. Database connectivity and data persistence
+
+# --- RULE 13: UI/UX PROFESSIONAL STANDARDS ---
+# For frontend development, I MUST ensure:
+# 1. NO white backgrounds or "garish" styling in professional dark themes
+# 2. Eliminate ALL redundant buttons, sections, and duplicate functionality
+# 3. Consolidate scattered controls into logical, unified interfaces
+# 4. Remove unnecessary boilerplate titles and decorative elements
+# 5. Maximize space for actual functionality vs visual clutter
+# 6. Test compilation after ANY UI changes (npm run build)
+# 7. Fix ALL TypeScript errors before declaring success
+
+# --- RULE 14: REPOSITORY AUDIT AND MAINTENANCE ---
+# Before making changes, I MUST perform systematic repo audit:
+# 1. List directory structure to understand current state
+# 2. Check for missing critical files (.venv, dependencies)
+# 3. Verify all imports and dependencies are properly installed
+# 4. Test existing functionality before adding new features
+# 5. Update documentation (README.md) to reflect current capabilities
+# 6. Commit and push changes with descriptive messages
+
+# --- RULE 15: ERROR PATTERN RECOGNITION ---
+# I MUST recognize and immediately fix these common errors:
+# 1. Missing virtual environments (.venv not found)
+# 2. Import errors due to missing dependencies
+# 3. Authorization conflicts (Bearer tokens on auth-free endpoints)
+# 4. White background styling in dark themes
+# 5. TypeScript compilation errors preventing app loading
+# 6. Zombie/defunct processes blocking ports
+# 7. Timeout errors in long-running curl commands
+
 # === ENFORCEMENT MECHANISM ===
 # If the user reports ANY error, it means I violated these rules.
 # The user's error report IS PROOF of my non-compliance.
@@ -81,3 +147,21 @@
 # 3. All servers are confirmed running with curl tests
 # 4. No error messages appear in any logs
 # 5. End-to-end user workflow completes successfully
+# 6. UI shows no white backgrounds or visual inconsistencies
+# 7. Frontend compiles without TypeScript errors
+# 8. Upload functionality works with actual files
+# 9. All redundant UI elements have been eliminated
+# 10. Repository is properly documented and pushed to GitHub
+
+# === MANDATORY CHECKLIST FOR EVERY TASK ===
+# Before declaring ANY task complete, I MUST verify:
+# □ Environment setup verified (.venv exists and activated)
+# □ All dependencies installed and imports working
+# □ Backend starts successfully and responds to curl
+# □ Frontend compiles and serves without errors
+# □ Upload/download functionality tested end-to-end
+# □ No white backgrounds or styling inconsistencies
+# □ No redundant buttons or duplicate functionality
+# □ All TypeScript compilation errors resolved
+# □ User workflow completed successfully
+# □ Changes committed and pushed to repository
