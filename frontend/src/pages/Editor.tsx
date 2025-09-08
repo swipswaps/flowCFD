@@ -549,7 +549,7 @@ export default function Editor() {
         <section className="editor-section">
           <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '1.5rem' }}>
             <AudioEffectsPanel 
-              videoId={currentVideo?.id}
+              videoId={activeVideo?.id}
               onProcessingComplete={(result) => {
                 // Add to processing history
                 if ((window as any).addAudioProcessingToHistory) {

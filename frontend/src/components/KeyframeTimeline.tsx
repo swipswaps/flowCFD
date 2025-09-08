@@ -207,7 +207,7 @@ const KeyframeTimeline: React.FC<KeyframeTimelineProps> = ({
       }}>
         Current: {formatTime(currentTime)}
         {markedIn !== null && markedOut !== null && (
-          <span> | Range: {formatTime(markedIn)} → {formatTime(markedOut)}</span>
+          <span> | Range: {formatTime(markedIn || 0)} → {formatTime(markedOut || 0)}</span>
         )}
       </div>
 

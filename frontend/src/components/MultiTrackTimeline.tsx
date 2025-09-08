@@ -21,6 +21,7 @@ interface TimelineClip {
   timeline_position: number;
   z_index: number;
   video: {
+    id?: string;
     filename: string;
     duration?: number;
   };
@@ -118,7 +119,7 @@ const DroppableTrack: React.FC<DroppableTrackProps> = ({ track, onDrop, onToggle
     accept: 'clip',
     drop: (item: any, monitor) => {
       const dropOffset = monitor.getClientOffset();
-      const targetElement = drop.current;
+      const targetElement = (drop as any).current;
       
       if (dropOffset && targetElement) {
         const rect = targetElement.getBoundingClientRect();
@@ -263,7 +264,7 @@ const DroppableTrack: React.FC<DroppableTrackProps> = ({ track, onDrop, onToggle
             zIndex: 1
           }}>
             <AudioWaveform
-              videoId={track.clips[0]?.video_id}
+              videoId={track.clips[0]?.video?.id || ''}
               height={40}
               width={800}
               color="#10b981"
