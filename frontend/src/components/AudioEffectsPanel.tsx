@@ -372,9 +372,10 @@ export const AudioEffectsPanel: React.FC<AudioEffectsPanelProps> = ({
                 value=""
                 style={{
                   padding: '0.5rem',
-                  border: '1px solid #d1d5db',
+                  border: '1px solid #444',
                   borderRadius: '4px',
-                  backgroundColor: 'white'
+                  backgroundColor: '#2a2a2a',
+                  color: '#eee'
                 }}
               >
                 <option value="">+ Add Effect</option>

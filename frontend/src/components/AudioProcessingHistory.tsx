@@ -314,7 +314,8 @@ export const AudioProcessingHistory: React.FC<AudioProcessingHistoryProps> = ({
                         
                         const container = document.createElement('div');
                         container.style.padding = '2rem';
-                        container.style.backgroundColor = 'white';
+                        container.style.backgroundColor = '#2a2a2a';
+                        container.style.color = '#eee';
                         container.style.borderRadius = '8px';
                         container.style.maxWidth = '90%';
                         container.style.maxHeight = '90%';

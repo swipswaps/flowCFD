@@ -108,8 +108,9 @@ export const AudioWaveformDemo: React.FC = () => {
           style={{
             padding: '0.5rem',
             borderRadius: '4px',
-            border: '1px solid #d1d5db',
-            backgroundColor: 'white',
+            border: '1px solid #444',
+            backgroundColor: '#2a2a2a',
+            color: '#eee',
             minWidth: '300px'
           }}
         >

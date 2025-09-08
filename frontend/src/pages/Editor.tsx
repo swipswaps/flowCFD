@@ -542,7 +542,7 @@ export default function Editor() {
         </div>
       </section>
 
-        <section className="editor-section">
+      <section className="editor-section">
           <AudioWaveformDemo />
         </section>
 
@@ -560,7 +560,7 @@ export default function Editor() {
             />
             <AudioProcessingHistory />
           </div>
-        </section>
+      </section>
 
       <section className="editor-section">
         <div className="export-controls" style={{ display: "flex", gap: "1rem", alignItems: "center" }}>

@@ -302,7 +302,7 @@ export default function VideoPlayer({ videoUrl, videoDuration, clipStartTime, cl
                 left: 0,
                 width: `${(playerCurrentTime / videoDuration) * 100}%`,
                 height: "100%",
-                background: "white",
+                background: "#007bff",
                 zIndex: 0,
               }}
             />

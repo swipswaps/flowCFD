@@ -62,7 +62,6 @@ export async function uploadVideo(file: File): Promise<VideoOut> {
   fd.append("file", file);
   const res = await fetch("/api/videos/upload", {
     method: "POST",
-    headers: { Authorization: `Bearer ${authToken}` },
     body: fd
   });
   if (!res.ok) throw new Error(await res.text());

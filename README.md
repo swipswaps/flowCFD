@@ -1,6 +1,6 @@
 # flowCFD Video Editor
 
-A professional-grade, web-based video editor with advanced lossless editing capabilities, focusing on rapid clip selection, keyframe-aware cutting, and quality-preserving workflows. It provides a browser-based interface for professional video editing with industry-standard quality metrics, powered by a Python backend with FFmpeg processing and a React frontend.
+A professional-grade, web-based video editor with advanced lossless editing capabilities, multi-track timeline, and comprehensive audio effects suite. Features drag-and-drop timeline editing, professional audio processing with 10+ effects, real-time waveform visualization, and keyframe-aware cutting with quality-preserving workflows. Built with a Python backend using FFmpeg processing and a modern React frontend with professional dark UI.
 
 ## Features
 
@@ -11,13 +11,28 @@ A professional-grade, web-based video editor with advanced lossless editing capa
 - **📊 Quality Metrics**: SSIM, PSNR, VMAF analysis for professional quality assessment
 - **🌟 Advanced Concatenation**: Multi-strategy timeline building with quality preservation
 
-### 🎬 **Intuitive Video Editing**
+### 🎛️ **Professional Audio Effects Suite**
+- **🎚️ 10+ Audio Effects**: Volume, EQ, Compressor, Reverb, Distortion, Pitch Shift, and more
+- **🎼 Professional Presets**: Voice Enhancement, Music Mastering, Podcast, Creative effects
+- **📊 Real-time Waveform**: Multi-sample audio visualization with Canvas rendering
+- **🎵 Audio Processing History**: Complete tracking and re-download of processed files
+- **⚡ Effect Chains**: Drag-and-drop effect ordering with real-time preview
+- **🎯 Parameter Control**: Professional-grade sliders with real-time parameter adjustment
+
+### 🎬 **Multi-Track Timeline Editing**
+- **🎭 Drag-and-Drop Timeline**: Professional multi-track interface with visual track management
 - **📺 Clip Preview System**: Click any timeline clip to instantly preview that specific segment
-- **⚡ Fast Video Processing**: Direct FFmpeg integration with encoder fallbacks
-- **🎯 Streamlined UI**: Clean interface with real-time quality indicators
-- **📱 Modern Tech Stack**: FastAPI backend, React frontend with TypeScript, and SQLite database
-- **🔄 Real-time Updates**: Live progress feedback and automatic thumbnail generation
+- **🧲 Timeline Snapping**: Precise clip positioning with snapping assistance
+- **🎵 Audio/Video Tracks**: Separate audio and video track management
+- **⚡ Real-time Updates**: Live progress feedback and automatic thumbnail generation
 - **💾 Persistent State**: Timeline and clip mode states survive page refreshes
+
+### 🎨 **Modern Professional UI**
+- **🌙 Professional Dark Theme**: Consistent dark interface across all components
+- **📱 Responsive Design**: Clean interface optimized for professional workflows
+- **🔄 Hot Module Replacement**: Instant UI updates during development
+- **🎯 Streamlined UX**: Intuitive controls with minimal visual clutter
+- **⚡ Fast Video Processing**: Direct FFmpeg integration with encoder fallbacks
 - **🚀 Professional Building**: Multiple build options from standard to lossless quality
 
 ## How It Works
@@ -56,8 +71,12 @@ The frontend provides an intuitive editing interface with modern web technologie
    - Drag-and-drop reordering capabilities
    - Visual feedback with hover effects and selection states
 4. **Professional Components**:
+   - **Multi-Track Timeline (`MultiTrackTimeline.tsx`)**: Drag-and-drop professional timeline with multiple video/audio tracks
+   - **Audio Effects Panel (`AudioEffectsPanel.tsx`)**: Professional audio processing with 10+ effects and presets
+   - **Audio Waveform Visualization (`AudioWaveform.tsx`)**: Real-time waveform display with Canvas rendering
    - **Keyframe Timeline (`KeyframeTimeline.tsx`)**: Visual keyframe indicators with snap-to functionality
    - **Lossless Indicator (`LosslessIndicator.tsx`)**: Real-time quality status feedback
+   - **Audio Processing History (`AudioProcessingHistory.tsx`)**: Complete tracking of processed files
 5. **State Management (`editorStore.ts`)**: Zustand-powered state with persistence for seamless user experience
 6. **API Integration (`client.ts`)**: TanStack React Query with advanced lossless editing endpoints
 
@@ -66,24 +85,30 @@ The frontend provides an intuitive editing interface with modern web technologie
 ```
 flowCFD/
 ├── backend/
-│   ├── app.py              # FastAPI application and API endpoints
-│   ├── database.py         # SQLite database setup
-│   ├── models.py           # SQLAlchemy ORM models
-│   ├── schemas.py          # Pydantic request/response schemas
-│   ├── ffmpeg_utils.py     # FFmpeg video processing utilities
-│   ├── requirements.txt    # Python dependencies
+│   ├── app.py                      # FastAPI application and API endpoints
+│   ├── database.py                 # SQLite database setup
+│   ├── models.py                   # SQLAlchemy ORM models
+│   ├── schemas.py                  # Pydantic request/response schemas
+│   ├── ffmpeg_utils.py             # FFmpeg video processing utilities
+│   ├── advanced_audio_effects.py   # Professional audio effects engine
+│   ├── audio_utils.py              # Audio waveform and processing utilities
+│   ├── requirements.txt            # Python dependencies
 │   └── store/              # File storage directory
 │       ├── uploads/        # Uploaded video files
 │       ├── thumbnails/     # Generated thumbnails
 │       └── exports/        # Built timeline videos
 ├── frontend/
 │   ├── src/
-│   │   ├── pages/Editor.tsx       # Main editor interface with lossless tools
+│   │   ├── pages/Editor.tsx           # Main editor interface with audio effects
 │   │   ├── components/
-│   │   │   ├── VideoPlayer.tsx    # Video player with clip preview
-│   │   │   ├── Timeline.tsx       # Interactive timeline component
-│   │   │   ├── KeyframeTimeline.tsx  # Professional keyframe visualization
-│   │   │   └── LosslessIndicator.tsx # Real-time quality feedback
+│   │   │   ├── VideoPlayer.tsx        # Video player with clip preview
+│   │   │   ├── Timeline.tsx           # Interactive timeline component
+│   │   │   ├── MultiTrackTimeline.tsx # Professional multi-track timeline
+│   │   │   ├── AudioEffectsPanel.tsx  # Professional audio effects interface
+│   │   │   ├── AudioWaveform.tsx      # Real-time waveform visualization
+│   │   │   ├── AudioProcessingHistory.tsx # Audio processing tracking
+│   │   │   ├── KeyframeTimeline.tsx   # Professional keyframe visualization
+│   │   │   └── LosslessIndicator.tsx  # Real-time quality feedback
 │   │   ├── stores/editorStore.ts  # Zustand state management with persistence
 │   │   ├── api/client.ts          # API client with lossless editing endpoints
 │   │   └── utils/time.ts          # Time formatting utilities
@@ -209,6 +234,13 @@ The application's signature feature allows users to click any timeline clip to i
 - `POST /api/clips/smart-cut` - Frame-accurate smart cutting
 - `GET /api/timeline/clips` - Get all timeline clips
 - `DELETE /api/timeline/clear` - Clear all timeline clips
+
+### Professional Audio Processing
+- `GET /api/audio/effects/available` - Get all available audio effects with parameters
+- `GET /api/audio/effects/presets` - Get professional audio presets (Voice, Music, Podcast, Creative)
+- `POST /api/audio/effects/process` - Process audio with effect chains and custom parameters
+- `GET /api/videos/{video_id}/waveform` - Generate real-time audio waveform data
+- `GET /api/videos/{video_id}/audio-info` - Get detailed audio track information
 
 ### Professional Quality & Building
 - `POST /api/quality/analyze` - Analyze quality metrics (SSIM, PSNR, VMAF)

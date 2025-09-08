@@ -1,3 +1,20 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Global Dark Theme */
+body {
+    background-color: #1e1e1e !important;
+    color: #eee !important;
+    margin: 0;
+    padding: 0;
+}
+
+html {
+    background-color: #1e1e1e !important;
+}
+
+#root {
+    background-color: #1e1e1e !important;
+    min-height: 100vh;
+}
