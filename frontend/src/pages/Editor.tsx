@@ -632,8 +632,8 @@ export default function Editor() {
               )}
             </div>
         </div>
+          {/* Consolidated timeline content now managed above - no duplicate components */}
           <div style={{ padding: "1rem" }}>
-            <MultiTrackTimeline />
             {timelineClips.length > 0 && (
               <div style={{ marginTop: "1rem" }}>
                 <Timeline 
