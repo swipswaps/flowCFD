@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect } from "react";
+import React, { useCallback, useEffect, useRef } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
 import {
@@ -24,6 +24,7 @@ import "./Editor.css"; // NEW: Import the stylesheet
 
 export default function Editor() {
   const qc = useQueryClient();
+  
   const {
     activeVideoId,
     setActiveVideoId,
@@ -35,6 +36,7 @@ export default function Editor() {
     setMarkedIn,
     setMarkedOut,
     clearMarks,
+    isPlaying,
     setIsPlaying,
     clipStartTime,
     clipEndTime,
@@ -332,60 +334,6 @@ export default function Editor() {
           </div>
         )}
 
-        {/* Professional Keyframe Timeline Integration */}
-        {activeVideo && keyframeData && (
-          <div style={{ marginTop: "1rem" }}>
-            <div style={{ 
-              display: "flex", 
-              justifyContent: "space-between", 
-              alignItems: "center",
-              marginBottom: "0.5rem"
-            }}>
-              <span style={{ 
-                fontSize: "0.85rem", 
-                color: "#6b7280",
-                fontWeight: "500"
-              }}>
-                🎯 {keyframeData.keyframes.length} keyframes detected
-              </span>
-              <button 
-                onClick={() => {
-                  // Find nearest keyframe to current time
-                  const nearest = keyframeData.keyframes.reduce((prev, curr) => 
-                    Math.abs(curr - playerCurrentTime) < Math.abs(prev - playerCurrentTime) ? curr : prev
-                  );
-                  console.log("Snap to keyframe:", nearest);
-                }}
-                style={{
-                  padding: "0.25rem 0.75rem",
-                  fontSize: "0.75rem",
-                  backgroundColor: "#10b981",
-                  color: "white",
-                  border: "none",
-                  borderRadius: "4px",
-                  cursor: "pointer"
-                }}
-              >
-                📍 Snap to Keyframe
-              </button>
-            </div>
-            
-            <KeyframeTimeline
-              keyframes={keyframeData.keyframes}
-              duration={activeVideo.duration || 0}
-              currentTime={playerCurrentTime}
-              markedIn={markedIn}
-              markedOut={markedOut}
-              onSeek={(time) => {
-                console.log("Seek to:", time);
-              }}
-              onSnapToKeyframe={(time) => {
-                console.log("Snap to keyframe:", time);
-              }}
-            />
-          </div>
-        )}
-
 
         {/* 🎬 Multi-Track Timeline - Integrated Interface */}
         <div className="timeline-integrated-header" style={{ 
@@ -418,13 +366,59 @@ export default function Editor() {
             gap: "0.5rem",
             padding: "1rem"
           }}>
-            {/* Row 1: Marking & Adding */}
+            {/* Row 1: Playback & Marking Controls */}
             <div className="marking-controls" style={{
               display: "flex",
               gap: "0.5rem",
               flexWrap: "wrap",
               alignItems: "center"
             }}>
+              <button 
+                onClick={() => setIsPlaying(!isPlaying)}
+                className="btn"
+                style={{ 
+                  padding: "0.375rem 0.75rem", 
+                  fontSize: "0.875rem", 
+                  whiteSpace: "nowrap",
+                  backgroundColor: isPlaying ? "#ef4444" : "#10b981",
+                  color: "white"
+                }}
+                disabled={!activeVideo}
+              >
+                {isPlaying ? "⏸️ Pause" : "▶️ Play"}
+              </button>
+              <button 
+                onClick={() => {
+                  const newTime = Math.max(0, playerCurrentTime - 5);
+                  setPlayerCurrentTime(newTime);
+                }}
+                className="btn"
+                style={{ 
+                  padding: "0.375rem 0.75rem", 
+                  fontSize: "0.875rem", 
+                  whiteSpace: "nowrap" 
+                }}
+                disabled={!activeVideo}
+              >
+                ⏪ -5s
+              </button>
+              <button 
+                onClick={() => {
+                  if (activeVideo) {
+                    const newTime = Math.min(activeVideo.duration || 0, playerCurrentTime + 5);
+                    setPlayerCurrentTime(newTime);
+                  }
+                }}
+                className="btn"
+                style={{ 
+                  padding: "0.375rem 0.75rem", 
+                  fontSize: "0.875rem", 
+                  whiteSpace: "nowrap" 
+                }}
+                disabled={!activeVideo}
+              >
+                ⏩ +5s
+              </button>
               <button 
                 onClick={() => setMarkedIn(playerCurrentTime)}
                 className="btn"
@@ -461,7 +455,7 @@ export default function Editor() {
               >
                 🗑️ Clear Marks
               </button>
-              <button 
+            <button 
                 onClick={handleAddClip} 
                 className="btn"
                 style={{ 
@@ -472,10 +466,10 @@ export default function Editor() {
                   color: "white"
                 }}
                 disabled={!activeVideoId || markedIn === null || markedOut === null || markedOut <= markedIn || (activeVideo && markedOut > activeVideo.duration!) || addClip.isPending}
-              >
+            >
                 {addClip.isPending ? "Adding..." : "➕ Add to Timeline"}
-              </button>
-            </div>
+            </button>
+        </div>
 
             {/* Row 2: Processing & Building */}
             <div className="processing-controls" style={{
@@ -530,7 +524,7 @@ export default function Editor() {
               >
                 {smartCutMutation.isPending ? "⏳ Cutting..." : "✂️ Smart Cut"}
               </button>
-              <button 
+            <button
                 onClick={() => {
                   fetch('/api/projects/build', {
                     method: 'POST',
@@ -564,8 +558,8 @@ export default function Editor() {
                 disabled={timelineClips.length === 0}
               >
                 🔧 Build Timeline
-              </button>
-              <button 
+            </button>
+            <button
                 onClick={() => {
                   fetch('/api/timeline/build-lossless', {
                     method: 'POST',
@@ -612,8 +606,32 @@ export default function Editor() {
               >
                 Clear Timeline
               </button>
+              {/* Keyframe Controls - Integrated */}
+              {keyframeData && (
+                <button 
+                  onClick={() => {
+                    // Find nearest keyframe to current time
+                    const nearest = keyframeData.keyframes.reduce((prev, curr) => 
+                      Math.abs(curr - playerCurrentTime) < Math.abs(prev - playerCurrentTime) ? curr : prev
+                    );
+                    setPlayerCurrentTime(nearest);
+                  }}
+                  className="btn"
+                  style={{
+                    padding: "0.375rem 0.75rem",
+                    fontSize: "0.875rem",
+                    whiteSpace: "nowrap",
+                    backgroundColor: "#10b981",
+                    color: "white"
+                  }}
+                  disabled={!activeVideo}
+                  title={`${keyframeData.keyframes.length} keyframes detected`}
+                >
+                  📍 Snap to Keyframe
+            </button>
+              )}
             </div>
-          </div>
+        </div>
           <div style={{ padding: "1rem" }}>
             <MultiTrackTimeline />
             {timelineClips.length > 0 && (
@@ -624,8 +642,8 @@ export default function Editor() {
                   activeVideo={activeVideo ?? null}
                   isGlobalTimeline={true}
                   onClipPlay={handleClipPlay}
-                />
-              </div>
+              />
+            </div>
             )}
           </div>
         </div>

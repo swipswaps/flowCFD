@@ -230,29 +230,11 @@ export default function VideoPlayer({ videoUrl, videoDuration, clipStartTime, cl
         </div>
       )}
 
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "8px", padding: "8px 0" }}>
-        <span>Current: {formatTime(playerCurrentTime)} / Duration: {formatTime(videoDuration)}</span>
-        <div style={{ display: "flex", gap: "8px" }}>
-          <button onClick={() => setIsPlaying(!isPlaying)} disabled={!videoUrl}>
-            {isPlaying ? "Pause" : "Play"}
-          </button>
-          <button onClick={() => handleSeek(Math.max(0, playerCurrentTime - 5))} disabled={!videoUrl}>-5s</button>
-          <button onClick={() => handleSeek(Math.min(videoDuration, playerCurrentTime + 5))} disabled={!videoUrl}>+5s</button>
-          <button onClick={() => { setMarkedIn(playerCurrentTime); toast.success(`IN marked at ${formatTime(playerCurrentTime)}`); }} disabled={!videoUrl}>
-            Mark IN (I)
-          </button>
-          <button onClick={() => { 
-            if (markedIn !== null && playerCurrentTime <= markedIn) {
-              toast.error("OUT point must be after IN point.");
-              return;
-            }
-            setMarkedOut(playerCurrentTime); 
-            toast.success(`OUT marked at ${formatTime(playerCurrentTime)}`); 
-          }} disabled={!videoUrl}>
-            Mark OUT (O)
-          </button>
-          <button onClick={clearMarks} disabled={!videoUrl}>Clear Marks (K)</button>
-        </div>
+      {/* Streamlined info bar - controls moved to integrated timeline */}
+      <div style={{ display: "flex", justifyContent: "center", alignItems: "center", marginTop: "8px", padding: "8px 0" }}>
+        <span style={{ fontSize: "0.9rem", color: "#888" }}>
+          Current: {formatTime(playerCurrentTime)} / Duration: {formatTime(videoDuration)}
+        </span>
       </div>
 
       <div style={{ width: "100%", height: "10px", background: "#333", position: "relative", borderRadius: "5px", overflow: "hidden" }}>
