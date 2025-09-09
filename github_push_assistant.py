@@ -181,25 +181,31 @@ def main():
                 print(f"  {line}")
         
         if confirm_action("Stage all important project files?"):
-            # Stage key files (avoid test files and temporary files)
-            important_files = [
-                "frontend/", "backend/", "README.md", 
-                "push_to_github_steps.txt", "*.json", "*.md"
-            ]
-            
-            # Add specific important files
+            # Add specific important files that exist
             key_files = [
                 "backend/app.py",
                 "frontend/src/components/MultiTrackTimeline.tsx", 
                 "frontend/src/pages/Editor.tsx",
-                "push_to_github_steps.txt"
+                "push_to_github_steps.txt",
+                "efficiency_improvements.txt",
+                "github_push_assistant.py",
+                "README.md"
             ]
             
+            staged_count = 0
             for file in key_files:
                 if Path(file).exists():
-                    run_command(f"git add {file}")
+                    success, _, _ = run_command(f"git add {file}")
+                    if success:
+                        staged_count += 1
+                        print(f"  ✅ Staged: {file}")
+                    else:
+                        print(f"  ❌ Failed to stage: {file}")
             
-            print_success("Important files staged")
+            if staged_count > 0:
+                print_success(f"Successfully staged {staged_count} important files")
+            else:
+                print_warning("No files were staged")
         else:
             print("Please stage files manually with 'git add <filename>'")
             return False
@@ -213,8 +219,31 @@ def main():
     success, staged_output, _ = run_command("git diff --cached --name-only")
     if not staged_output.strip():
         print_warning("No staged changes to commit")
-        if not confirm_action("Continue anyway?"):
+        print("This usually means:")
+        print("- All changes are already committed")
+        print("- Files weren't properly staged")
+        print("- Only untracked files exist")
+        
+        if not confirm_action("Would you like to stage untracked files and continue?"):
+            print("Tip: You can manually stage files with 'git add <filename>' and run this script again")
             return False
+        else:
+            # Try to stage some untracked files
+            success, untracked, _ = run_command("git ls-files --others --exclude-standard")
+            if untracked.strip():
+                important_untracked = []
+                for file in untracked.strip().split('\n'):
+                    if any(file.endswith(ext) for ext in ['.py', '.txt', '.md', '.json']):
+                        if not any(test in file for test in ['test_', 'debug_', 'inspect_']):
+                            important_untracked.append(file)
+                
+                if important_untracked and confirm_action(f"Stage {len(important_untracked)} important untracked files?"):
+                    for file in important_untracked:
+                        run_command(f"git add {file}")
+                        print(f"  ✅ Staged: {file}")
+                    print_success("Untracked files staged")
+                else:
+                    print_warning("No suitable files to stage automatically")
     
     # Get commit message
     default_message = "feat: Enhanced drag-and-drop timeline functionality with clip sliding and snapping"
