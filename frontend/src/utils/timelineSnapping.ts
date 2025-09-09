@@ -1,6 +1,6 @@
 // Timeline snapping utilities for professional video editing behavior
 
-export const SNAP_THRESHOLD = 10; // pixels
+export const SNAP_THRESHOLD = 15; // pixels - increased for better magnetic feel
 export const PIXELS_PER_SECOND = 50;
 
 export interface SnapPoint {
@@ -171,18 +171,32 @@ export function calculateMagneticSnap(
   const startSnap = calculateSnap(newPosition, snapPoints);
   const endSnap = calculateSnap(newPosition + clipDuration, snapPoints);
   
-  // Choose the best snap (closest)
+  // Choose the best snap (closest), with preference for clip adjacency
   let finalPosition = newPosition;
   let activeSnapIndicators: SnapPoint[] = [];
   
   if (startSnap.snapped && endSnap.snapped) {
-    // Both ends can snap - choose the closer one
-    if (startSnap.snapDistance <= endSnap.snapDistance) {
+    // Both ends can snap - prioritize clip start/end over other snap types
+    const startIsClip = startSnap.snapPoint?.type === 'clip_start' || startSnap.snapPoint?.type === 'clip_end';
+    const endIsClip = endSnap.snapPoint?.type === 'clip_start' || endSnap.snapPoint?.type === 'clip_end';
+    
+    if (startIsClip && !endIsClip) {
+      // Prefer clip-to-clip snapping for start
       finalPosition = startSnap.snapTime;
       if (startSnap.snapPoint) activeSnapIndicators.push(startSnap.snapPoint);
-    } else {
+    } else if (endIsClip && !startIsClip) {
+      // Prefer clip-to-clip snapping for end
       finalPosition = endSnap.snapTime - clipDuration;
       if (endSnap.snapPoint) activeSnapIndicators.push(endSnap.snapPoint);
+    } else {
+      // Both are clips or both are not clips - choose the closer one
+      if (startSnap.snapDistance <= endSnap.snapDistance) {
+        finalPosition = startSnap.snapTime;
+        if (startSnap.snapPoint) activeSnapIndicators.push(startSnap.snapPoint);
+      } else {
+        finalPosition = endSnap.snapTime - clipDuration;
+        if (endSnap.snapPoint) activeSnapIndicators.push(endSnap.snapPoint);
+      }
     }
   } else if (startSnap.snapped) {
     finalPosition = startSnap.snapTime;

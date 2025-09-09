@@ -237,7 +237,9 @@ const DroppableTrack: React.FC<DroppableTrackProps> = ({ track, onDrop, onToggle
     <div
       ref={(el) => {
         drop(el);
-        dropRef.current = el;
+        if (dropRef.current !== el) {
+          (dropRef as any).current = el;
+        }
       }}
       className={`timeline-track ${isActive ? 'drop-target' : ''} ${track.locked ? 'locked' : ''}`}
       style={{
@@ -461,7 +463,8 @@ export const MultiTrackTimeline: React.FC<MultiTrackTimelineProps> = ({ classNam
         snapIndicators = snapResult.snapIndicators;
         
         // Enhanced snapping feedback
-        if (snapResult.snapped) {
+        const didSnap = snapResult.startSnap.snapped || snapResult.endSnap.snapped;
+        if (didSnap) {
           console.log(`🧲 SNAP: Clip ${clipId} snapped from ${rawPosition.toFixed(2)}s to ${finalPosition.toFixed(2)}s`);
         }
         
@@ -479,22 +482,42 @@ export const MultiTrackTimeline: React.FC<MultiTrackTimelineProps> = ({ classNam
       const frameTime = 1/30;
       finalPosition = Math.round(finalPosition / frameTime) * frameTime;
 
-      // Collision detection and automatic sliding
+      // Collision detection with proper adjacent clip support
       const targetTrack = tracks.find(t => t.id === newTrackId);
       if (targetTrack) {
         const clipDuration = movedClip.end_time - movedClip.start_time;
         const clipEndPosition = finalPosition + clipDuration;
         
-        // Check for collisions with other clips on the target track
+        // Check for actual overlaps (not just adjacency) with other clips on the target track
         const otherClips = targetTrack.clips.filter(c => c.id !== clipId);
+        
+        // Define a small tolerance for adjacency detection (clips can touch)
+        const ADJACENCY_TOLERANCE = 0.01; // 10ms tolerance
         
         for (const otherClip of otherClips) {
           const otherStart = otherClip.timeline_position;
           const otherEnd = otherClip.timeline_position + (otherClip.end_time - otherClip.start_time);
           
-          // Check if clips would overlap
-          if (finalPosition < otherEnd && clipEndPosition > otherStart) {
-            // Collision detected - slide to avoid overlap
+          // Check for TRUE overlaps (not adjacency)
+          // Allow clips to be adjacent (touching) by using tolerance
+          const wouldOverlapStart = finalPosition < (otherEnd - ADJACENCY_TOLERANCE);
+          const wouldOverlapEnd = clipEndPosition > (otherStart + ADJACENCY_TOLERANCE);
+          
+          if (wouldOverlapStart && wouldOverlapEnd) {
+            // True collision detected - slide to avoid overlap
+            // Check if we're trying to snap to this clip's edges (adjacent placement)
+            const isClipStartSnappingToOtherEnd = Math.abs(finalPosition - otherEnd) < 0.1;
+            const isClipEndSnappingToOtherStart = Math.abs(clipEndPosition - otherStart) < 0.1;
+            
+            // Only allow snapping if it results in ADJACENT (not overlapping) placement
+            const wouldBeAdjacent = isClipStartSnappingToOtherEnd || isClipEndSnappingToOtherStart;
+            
+            if (wouldBeAdjacent) {
+              console.log(`🧲 ALLOW SNAP: Clip ${clipId} snapping to adjacent position at ${finalPosition.toFixed(2)}s`);
+              continue; // Don't treat adjacent snapping as collision
+            }
+            
+            // Otherwise, handle true collision by sliding
             if (finalPosition < otherStart) {
               // Moving clip starts before other clip - snap to just before it
               finalPosition = Math.max(0, otherStart - clipDuration);

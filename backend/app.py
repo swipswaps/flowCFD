@@ -1932,7 +1932,52 @@ async def move_clip(request: dict, db: Session = Depends(get_db)):
             clip.track_id = new_track_id
         
         if new_position is not None:
-            clip.timeline_position = max(0, new_position)
+            # Apply collision detection and adjacency snapping
+            final_position = max(0, new_position)
+            
+            # Get target track for collision detection
+            target_track_id = new_track_id if new_track_id else clip.track_id
+            
+            # Find other clips on the same track
+            other_clips = db.query(Clip).filter(
+                Clip.track_id == target_track_id,
+                Clip.id != clip_id
+            ).all()
+            
+            if other_clips:
+                clip_duration = clip.end_time - clip.start_time
+                clip_end_position = final_position + clip_duration
+                ADJACENCY_TOLERANCE = 0.01  # 10ms tolerance
+                
+                for other_clip in other_clips:
+                    other_start = other_clip.timeline_position
+                    other_end = other_clip.timeline_position + (other_clip.end_time - other_clip.start_time)
+                    
+                    # Check for true overlaps (not adjacency)
+                    would_overlap_start = final_position < (other_end - ADJACENCY_TOLERANCE)
+                    would_overlap_end = clip_end_position > (other_start + ADJACENCY_TOLERANCE)
+                    
+                    if would_overlap_start and would_overlap_end:
+                        # Check if this is adjacency snapping (allowed)
+                        is_clip_start_snapping_to_other_end = abs(final_position - other_end) < 0.1
+                        is_clip_end_snapping_to_other_start = abs(clip_end_position - other_start) < 0.1
+                        would_be_adjacent = is_clip_start_snapping_to_other_end or is_clip_end_snapping_to_other_start
+                        
+                        if not would_be_adjacent:
+                            # True collision - slide to avoid overlap
+                            if final_position < other_start:
+                                # Move to before other clip
+                                final_position = max(0, other_start - clip_duration)
+                                logging.info(f"Collision detected: slid clip {clip_id} to {final_position} (before other clip)")
+                            else:
+                                # Move to after other clip
+                                final_position = other_end
+                                logging.info(f"Collision detected: slid clip {clip_id} to {final_position} (after other clip)")
+                            break  # Only handle one collision at a time
+                        else:
+                            logging.info(f"Adjacency snapping allowed for clip {clip_id} at {final_position}")
+            
+            clip.timeline_position = final_position
         
         db.commit()
         db.refresh(clip)
