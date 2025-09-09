@@ -335,318 +335,96 @@ export default function Editor() {
         )}
 
 
-        {/* 🎬 Multi-Track Timeline - Integrated Interface */}
-        <div className="timeline-integrated-header" style={{ 
-          marginTop: "1rem",
-          border: "1px solid #444",
+        {/* Essential Timeline Controls */}
+        <div style={{ 
+          display: "flex", 
+          gap: "0.5rem", 
+          padding: "1rem",
+          flexWrap: "wrap",
+          alignItems: "center",
+          backgroundColor: "#2a2a2a",
           borderRadius: "8px",
-          backgroundColor: "#2a2a2a"
+          marginTop: "1rem"
         }}>
-          {/* Timeline Title Section */}
-          <div className="timeline-title-section" style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            padding: "0.75rem 1rem",
-            borderBottom: "1px solid #444",
-            backgroundColor: "#1e1e1e"
-          }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
-              <h3 style={{ margin: 0, fontSize: "1.1rem", color: "#eee" }}>🎬 Multi-Track Timeline</h3>
-              <span className="timeline-info" style={{ fontSize: "0.9rem", color: "#888" }}>
-                {timelineClips.length} clips | {activeVideo?.filename || 'No video selected'}
-              </span>
-            </div>
-          </div>
-
-          {/* Timeline Controls Rows */}
-          <div className="timeline-controls-row" style={{
-            display: "flex",
-            flexDirection: "column",
-            gap: "0.5rem",
-            padding: "1rem"
-          }}>
-            {/* Row 1: Playback & Marking Controls */}
-            <div className="marking-controls" style={{
-              display: "flex",
-              gap: "0.5rem",
-              flexWrap: "wrap",
-              alignItems: "center"
-            }}>
-              <button 
-                onClick={() => setIsPlaying(!isPlaying)}
-                className="btn"
-                style={{ 
-                  padding: "0.375rem 0.75rem", 
-                  fontSize: "0.875rem", 
-                  whiteSpace: "nowrap",
-                  backgroundColor: isPlaying ? "#ef4444" : "#10b981",
-                  color: "white"
-                }}
-                disabled={!activeVideo}
-              >
-                {isPlaying ? "⏸️ Pause" : "▶️ Play"}
-              </button>
-              <button 
-                onClick={() => {
-                  const newTime = Math.max(0, playerCurrentTime - 5);
-                  setPlayerCurrentTime(newTime);
-                }}
-                className="btn"
-                style={{ 
-                  padding: "0.375rem 0.75rem", 
-                  fontSize: "0.875rem", 
-                  whiteSpace: "nowrap" 
-                }}
-                disabled={!activeVideo}
-              >
-                ⏪ -5s
-              </button>
-              <button 
-                onClick={() => {
-                  if (activeVideo) {
-                    const newTime = Math.min(activeVideo.duration || 0, playerCurrentTime + 5);
-                    setPlayerCurrentTime(newTime);
-                  }
-                }}
-                className="btn"
-                style={{ 
-                  padding: "0.375rem 0.75rem", 
-                  fontSize: "0.875rem", 
-                  whiteSpace: "nowrap" 
-                }}
-                disabled={!activeVideo}
-              >
-                ⏩ +5s
-              </button>
-              <button 
-                onClick={() => setMarkedIn(playerCurrentTime)}
-                className="btn"
-                style={{ 
-                  padding: "0.375rem 0.75rem", 
-                  fontSize: "0.875rem", 
-                  whiteSpace: "nowrap" 
-                }}
-                disabled={!activeVideo}
-              >
-                📍 Mark IN ({markedIn !== null ? formatTime(markedIn) : "--:--"})
-              </button>
-              <button 
-                onClick={() => setMarkedOut(playerCurrentTime)}
-                className="btn"
-                style={{ 
-                  padding: "0.375rem 0.75rem", 
-                  fontSize: "0.875rem", 
-                  whiteSpace: "nowrap" 
-                }}
-                disabled={!activeVideo}
-              >
-                📍 Mark OUT ({markedOut !== null ? formatTime(markedOut) : "--:--"})
-              </button>
-              <button 
-                onClick={clearMarks}
-                className="btn"
-                style={{ 
-                  padding: "0.375rem 0.75rem", 
-                  fontSize: "0.875rem", 
-                  whiteSpace: "nowrap" 
-                }}
-                disabled={!activeVideo}
-              >
-                🗑️ Clear Marks
-              </button>
-            <button 
-                onClick={handleAddClip} 
-                className="btn"
-                style={{ 
-                  padding: "0.375rem 0.75rem", 
-                  fontSize: "0.875rem", 
-                  whiteSpace: "nowrap",
-                  backgroundColor: "#007bff",
-                  color: "white"
-                }}
-                disabled={!activeVideoId || markedIn === null || markedOut === null || markedOut <= markedIn || (activeVideo && markedOut > activeVideo.duration!) || addClip.isPending}
-            >
-                {addClip.isPending ? "Adding..." : "➕ Add to Timeline"}
-            </button>
+          <button 
+            onClick={() => setIsPlaying(!isPlaying)}
+            className="btn"
+            style={{ 
+              padding: "0.5rem 1rem", 
+              backgroundColor: isPlaying ? "#ef4444" : "#10b981",
+              color: "white",
+              border: "none",
+              borderRadius: "4px"
+            }}
+            disabled={!activeVideo}
+          >
+            {isPlaying ? "⏸️ Pause" : "▶️ Play"}
+          </button>
+          
+          <button 
+            onClick={() => setMarkedIn(playerCurrentTime)}
+            className="btn"
+            style={{ 
+              padding: "0.5rem 1rem", 
+              backgroundColor: "#007bff",
+              color: "white",
+              border: "none",
+              borderRadius: "4px"
+            }}
+            disabled={!activeVideo}
+          >
+            📍 Mark IN ({markedIn !== null ? formatTime(markedIn) : "--:--"})
+          </button>
+          
+          <button 
+            onClick={() => setMarkedOut(playerCurrentTime)}
+            className="btn"
+            style={{ 
+              padding: "0.5rem 1rem", 
+              backgroundColor: "#007bff",
+              color: "white",
+              border: "none",
+              borderRadius: "4px"
+            }}
+            disabled={!activeVideo}
+          >
+            📍 Mark OUT ({markedOut !== null ? formatTime(markedOut) : "--:--"})
+          </button>
+          
+          <button 
+            onClick={clearMarks}
+            className="btn"
+            style={{ 
+              padding: "0.5rem 1rem", 
+              backgroundColor: "#6b7280",
+              color: "white",
+              border: "none",
+              borderRadius: "4px"
+            }}
+            disabled={!activeVideo}
+          >
+            🗑️ Clear Marks
+          </button>
+          
+          <button 
+            onClick={handleAddClip} 
+            className="btn"
+            style={{ 
+              padding: "0.5rem 1rem", 
+              backgroundColor: "#10b981",
+              color: "white",
+              border: "none",
+              borderRadius: "4px",
+              fontWeight: "bold"
+            }}
+            disabled={!activeVideoId || markedIn === null || markedOut === null || markedOut <= markedIn || (activeVideo && markedOut > activeVideo.duration!) || addClip.isPending}
+          >
+            {addClip.isPending ? "Adding..." : "➕ Add to Timeline"}
+          </button>
         </div>
 
-            {/* Row 2: Processing & Building */}
-            <div className="processing-controls" style={{
-              display: "flex",
-              gap: "0.5rem",
-              flexWrap: "wrap",
-              alignItems: "center"
-            }}>
-              <button 
-                onClick={() => {
-                  if (activeVideoId && markedIn !== null && markedOut !== null) {
-                    losslessExtractMutation.mutate({ 
-                      video_id: activeVideoId, 
-                      start: markedIn, 
-                      end: markedOut 
-                    });
-                  }
-                }}
-                className="btn"
-                style={{ 
-                  padding: "0.375rem 0.75rem", 
-                  fontSize: "0.875rem", 
-                  whiteSpace: "nowrap",
-                  backgroundColor: "#10b981", 
-                  color: "white"
-                }}
-                disabled={!activeVideoId || markedIn === null || markedOut === null || markedOut <= markedIn || losslessExtractMutation.isPending}
-                title="Extract with maximum quality preservation"
-              >
-                {losslessExtractMutation.isPending ? "⏳ Extracting..." : "🎯 Lossless Extract"}
-              </button>
-              <button 
-                onClick={() => {
-                  if (activeVideoId && markedIn !== null && markedOut !== null) {
-                    smartCutMutation.mutate({ 
-                      video_id: activeVideoId, 
-                      start: markedIn, 
-                      end: markedOut 
-                    });
-                  }
-                }}
-                className="btn"
-                style={{ 
-                  padding: "0.375rem 0.75rem", 
-                  fontSize: "0.875rem", 
-                  whiteSpace: "nowrap",
-                  backgroundColor: "#f59e0b", 
-                  color: "white"
-                }}
-                disabled={!activeVideoId || markedIn === null || markedOut === null || markedOut <= markedIn || smartCutMutation.isPending}
-                title="Frame-accurate cutting with minimal quality loss"
-              >
-                {smartCutMutation.isPending ? "⏳ Cutting..." : "✂️ Smart Cut"}
-              </button>
-            <button
-                onClick={() => {
-                  fetch('/api/projects/build', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ quality_target: 'balanced' })
-                  })
-                  .then(response => response.json())
-                  .then(data => {
-                    if (data.success) {
-                      toast.success(`Build complete: ${data.processing_time.toFixed(1)}s`);
-                      const a = document.createElement('a');
-                      a.href = data.download_url;
-                      a.download = data.output_file;
-                      a.click();
-                    } else {
-                      toast.error('Build failed');
-                    }
-                  })
-                  .catch(error => {
-                    toast.error(`Build error: ${error.message}`);
-                  });
-                }}
-                className="btn"
-                style={{ 
-                  padding: "0.375rem 0.75rem", 
-                  fontSize: "0.875rem", 
-                  whiteSpace: "nowrap",
-                  backgroundColor: "#007bff",
-                  color: "white"
-                }}
-                disabled={timelineClips.length === 0}
-              >
-                🔧 Build Timeline
-            </button>
-            <button
-                onClick={() => {
-                  fetch('/api/timeline/build-lossless', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ quality_target: 'lossless' })
-                  })
-                  .then(response => response.json())
-                  .then(data => {
-                    if (data.success) {
-                      toast.success(`✅ Lossless build: ${data.method_used} | ${data.processing_time.toFixed(1)}s`);
-                      const a = document.createElement('a');
-                      a.href = data.download_url;
-                      a.download = data.output_file;
-                      a.click();
-                    } else {
-                      toast.error('Lossless build failed');
-                    }
-                  })
-                  .catch(error => {
-                    toast.error(`Build error: ${error.message}`);
-                  });
-                }}
-                className="btn"
-                style={{ 
-                  padding: "0.375rem 0.75rem", 
-                  fontSize: "0.875rem", 
-                  whiteSpace: "nowrap",
-                  backgroundColor: "#8b5cf6",
-                  color: "white"
-                }}
-                disabled={timelineClips.length === 0}
-              >
-                🌟 Lossless Build
-              </button>
-              <button 
-                onClick={() => clearTimelineMutation.mutate()}
-                className="btn btn-danger"
-                style={{ 
-                  padding: "0.375rem 0.75rem", 
-                  fontSize: "0.875rem", 
-                  whiteSpace: "nowrap"
-                }}
-                disabled={clearTimelineMutation.isPending || (timelineClips?.length || 0) === 0}
-              >
-                Clear Timeline
-              </button>
-              {/* Keyframe Controls - Integrated */}
-              {keyframeData && (
-                <button 
-                  onClick={() => {
-                    // Find nearest keyframe to current time
-                    const nearest = keyframeData.keyframes.reduce((prev, curr) => 
-                      Math.abs(curr - playerCurrentTime) < Math.abs(prev - playerCurrentTime) ? curr : prev
-                    );
-                    setPlayerCurrentTime(nearest);
-                  }}
-                  className="btn"
-                  style={{
-                    padding: "0.375rem 0.75rem",
-                    fontSize: "0.875rem",
-                    whiteSpace: "nowrap",
-                    backgroundColor: "#10b981",
-                    color: "white"
-                  }}
-                  disabled={!activeVideo}
-                  title={`${keyframeData.keyframes.length} keyframes detected`}
-                >
-                  📍 Snap to Keyframe
-            </button>
-              )}
-            </div>
-        </div>
-          {/* Consolidated timeline content now managed above - no duplicate components */}
-          <div style={{ padding: "1rem" }}>
-            {timelineClips.length > 0 && (
-              <div style={{ marginTop: "1rem" }}>
-                <Timeline 
-                  clips={timelineClips} 
-                  videoDuration={activeVideo?.duration || 0} 
-                  activeVideo={activeVideo ?? null}
-                  isGlobalTimeline={true}
-                  onClipPlay={handleClipPlay}
-              />
-            </div>
-            )}
-          </div>
-        </div>
+        {/* Multi-Track Timeline */}
+        <MultiTrackTimeline />
       </section>
 
       <section className="editor-section">

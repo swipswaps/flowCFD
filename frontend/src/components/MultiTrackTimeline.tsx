@@ -42,16 +42,24 @@ interface Track {
 interface DraggableClipProps {
   clip: TimelineClip;
   onMove: (clipId: string, newTrackId: number, newPosition: number) => void;
+  onRemove?: (clipId: string) => void;
+  onTrim?: (clipId: string, newStart: number, newEnd: number) => void;
 }
 
-const DraggableClip: React.FC<DraggableClipProps> = ({ clip, onMove }) => {
+const DraggableClip: React.FC<DraggableClipProps> = ({ clip, onMove, onRemove, onTrim }) => {
   const [{ isDragging }, drag] = useDrag({
     type: 'clip',
-    item: { 
-      id: clip.id, 
-      trackId: clip.track_id, 
-      position: clip.timeline_position,
-      duration: clip.end_time - clip.start_time
+    item: () => {
+      console.log(`🚀 DRAG BEGIN: Starting drag for clip ${clip.id}`);
+      return { 
+        id: clip.id, 
+        trackId: clip.track_id, 
+        position: clip.timeline_position,
+        duration: clip.end_time - clip.start_time
+      };
+    },
+    end: (item, monitor) => {
+      console.log(`🏁 DRAG END: Finished drag for clip ${clip.id}, dropped: ${monitor.didDrop()}`);
     },
     collect: (monitor) => ({
       isDragging: monitor.isDragging(),
@@ -66,6 +74,7 @@ const DraggableClip: React.FC<DraggableClipProps> = ({ clip, onMove }) => {
     <div
       ref={drag}
       className={`timeline-clip ${isDragging ? 'dragging' : ''}`}
+      onClick={() => console.log(`🖱️ CLICK: Clip ${clip.id} clicked`)}
       style={{
         left: clipLeft,
         width: clipWidth,
@@ -93,16 +102,79 @@ const DraggableClip: React.FC<DraggableClipProps> = ({ clip, onMove }) => {
         flex: 1, 
         overflow: 'hidden', 
         textOverflow: 'ellipsis', 
-        whiteSpace: 'nowrap' 
+        whiteSpace: 'nowrap',
+        pointerEvents: 'none'  // Don't block drag events
       }}>
         {clip.video.filename}
       </div>
       <div style={{ 
         fontSize: '10px', 
         opacity: 0.8, 
-        marginLeft: '4px' 
+        marginLeft: '4px',
+        pointerEvents: 'none'  // Don't block drag events
       }}>
         {clipDuration.toFixed(1)}s
+      </div>
+      
+      {/* Clip Controls */}
+      <div style={{
+        position: 'absolute',
+        top: '2px',
+        right: '2px',
+        display: 'flex',
+        gap: '2px',
+        opacity: 0.9,
+        pointerEvents: 'auto'  // Buttons should be clickable
+      }}>
+        {onTrim && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              const newEnd = Math.max(clip.start_time + 0.5, clip.end_time - 0.5);
+              onTrim(clip.id, clip.start_time, newEnd);
+            }}
+            style={{
+              width: '16px',
+              height: '16px',
+              border: 'none',
+              borderRadius: '2px',
+              backgroundColor: '#f59e0b',
+              color: 'white',
+              cursor: 'pointer',
+              fontSize: '8px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}
+            title="Trim clip"
+          >
+            ✂️
+          </button>
+        )}
+        {onRemove && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onRemove(clip.id);
+            }}
+            style={{
+              width: '16px',
+              height: '16px',
+              border: 'none',
+              borderRadius: '2px',
+              backgroundColor: '#ef4444',
+              color: 'white',
+              cursor: 'pointer',
+              fontSize: '8px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}
+            title="Remove clip"
+          >
+            ❌
+          </button>
+        )}
       </div>
     </div>
   );
@@ -112,20 +184,45 @@ interface DroppableTrackProps {
   track: Track;
   onDrop: (clipId: string, trackId: number, position: number) => void;
   onToggleTrack: (trackId: number, property: 'enabled' | 'locked') => void;
+  onRemoveClip: (clipId: string) => void;
+  onTrimClip: (clipId: string, newStart: number, newEnd: number) => void;
 }
 
-const DroppableTrack: React.FC<DroppableTrackProps> = ({ track, onDrop, onToggleTrack }) => {
+const DroppableTrack: React.FC<DroppableTrackProps> = ({ track, onDrop, onToggleTrack, onRemoveClip, onTrimClip }) => {
+  const dropRef = useRef<HTMLDivElement>(null);
   const [{ isOver, canDrop }, drop] = useDrop({
     accept: 'clip',
     drop: (item: any, monitor) => {
+      console.log(`📍 DROP: Received drop on track ${track.id} with item`, item);
       const dropOffset = monitor.getClientOffset();
-      const targetElement = (drop as any).current;
       
-      if (dropOffset && targetElement) {
-        const rect = targetElement.getBoundingClientRect();
-        const relativeX = dropOffset.x - rect.left - TRACK_HEADER_WIDTH;
-        const newPosition = Math.max(0, relativeX / PIXELS_PER_SECOND);
-        onDrop(item.id, track.id, newPosition);
+      if (dropOffset) {
+        // Use the dropRef to get the target element
+        const targetElement = dropRef.current;
+        if (targetElement) {
+          const rect = targetElement.getBoundingClientRect();
+          const relativeX = dropOffset.x - rect.left - TRACK_HEADER_WIDTH;
+          const newPosition = Math.max(0, relativeX / PIXELS_PER_SECOND);
+          console.log(`📍 DROP: Calculated position ${newPosition} for track ${track.id} at x=${dropOffset.x}`);
+          onDrop(item.id, track.id, newPosition);
+        } else {
+          console.log(`❌ DROP: No target element ref`);
+        }
+      } else {
+        console.log(`❌ DROP: No drop offset from monitor`);
+      }
+    },
+    hover: (item: any, monitor) => {
+      if (!monitor.isOver({ shallow: true })) return;
+      
+      const hoverOffset = monitor.getClientOffset();
+      if (hoverOffset && dropRef.current) {
+        const rect = dropRef.current.getBoundingClientRect();
+        const relativeX = hoverOffset.x - rect.left - TRACK_HEADER_WIDTH;
+        const hoverPosition = Math.max(0, relativeX / PIXELS_PER_SECOND);
+        
+        // Show real-time position feedback during hover
+        console.log(`🔍 HOVER: Over track ${track.id} at position ${hoverPosition.toFixed(2)}s`);
       }
     },
     collect: (monitor) => ({
@@ -138,13 +235,18 @@ const DroppableTrack: React.FC<DroppableTrackProps> = ({ track, onDrop, onToggle
 
   return (
     <div
-      ref={drop}
+      ref={(el) => {
+        drop(el);
+        dropRef.current = el;
+      }}
       className={`timeline-track ${isActive ? 'drop-target' : ''} ${track.locked ? 'locked' : ''}`}
       style={{
         position: 'relative',
         height: `${TRACK_HEIGHT}px`,
         backgroundColor: isActive ? '#f0f9ff' : track.enabled ? '#ffffff' : '#f9fafb',
-        border: `1px solid ${isActive ? '#3b82f6' : '#e5e7eb'}`,
+        borderTop: `1px solid ${isActive ? '#3b82f6' : '#e5e7eb'}`,
+        borderRight: `1px solid ${isActive ? '#3b82f6' : '#e5e7eb'}`,
+        borderBottom: `1px solid ${isActive ? '#3b82f6' : '#e5e7eb'}`,
         borderLeft: `4px solid ${track.type === 'video' ? '#3b82f6' : track.type === 'audio' ? '#10b981' : '#f59e0b'}`,
         marginBottom: '2px',
         borderRadius: '4px',
@@ -261,7 +363,8 @@ const DroppableTrack: React.FC<DroppableTrackProps> = ({ track, onDrop, onToggle
             left: '10px',
             right: '10px',
             height: '40px',
-            zIndex: 1
+            zIndex: 0,  // Below clips
+            pointerEvents: 'none'  // Don't interfere with clip interactions
           }}>
             <AudioWaveform
               videoId={track.clips[0]?.video?.id || ''}
@@ -281,6 +384,8 @@ const DroppableTrack: React.FC<DroppableTrackProps> = ({ track, onDrop, onToggle
             key={clip.id}
             clip={clip}
             onMove={() => {}} // Handled by drop
+            onRemove={onRemoveClip}
+            onTrim={onTrimClip}
           />
         ))}
       </div>
@@ -334,15 +439,19 @@ export const MultiTrackTimeline: React.FC<MultiTrackTimelineProps> = ({ classNam
 
   // Handle clip movement with snapping
   const handleClipMove = useCallback(async (clipId: string, newTrackId: number, rawPosition: number) => {
+    console.log(`🎬 DRAG: Moving clip ${clipId} to track ${newTrackId} at position ${rawPosition}`);
     try {
       // Find the clip being moved
       const movedClip = tracks
         .flatMap(t => t.clips)
         .find(c => c.id === clipId);
       
-      if (!movedClip) return;
+      if (!movedClip) {
+        console.error(`❌ DRAG: Clip ${clipId} not found in tracks`);
+        return;
+      }
 
-      // Calculate snapped position if snapping is enabled
+      // Calculate snapped position with enhanced magnetic behavior
       let finalPosition = rawPosition;
       let snapIndicators: SnapPoint[] = [];
       
@@ -351,11 +460,53 @@ export const MultiTrackTimeline: React.FC<MultiTrackTimelineProps> = ({ classNam
         finalPosition = snapResult.finalPosition;
         snapIndicators = snapResult.snapIndicators;
         
+        // Enhanced snapping feedback
+        if (snapResult.snapped) {
+          console.log(`🧲 SNAP: Clip ${clipId} snapped from ${rawPosition.toFixed(2)}s to ${finalPosition.toFixed(2)}s`);
+        }
+        
         // Update snap indicators for visual feedback
         setActiveSnapIndicators(snapIndicators);
         
         // Clear snap indicators after a short delay
-        setTimeout(() => setActiveSnapIndicators([]), 1000);
+        setTimeout(() => setActiveSnapIndicators([]), 1500);
+      }
+      
+      // Ensure no negative positions
+      finalPosition = Math.max(0, finalPosition);
+      
+      // Round to frame boundaries for smoother editing (assuming 30fps)
+      const frameTime = 1/30;
+      finalPosition = Math.round(finalPosition / frameTime) * frameTime;
+
+      // Collision detection and automatic sliding
+      const targetTrack = tracks.find(t => t.id === newTrackId);
+      if (targetTrack) {
+        const clipDuration = movedClip.end_time - movedClip.start_time;
+        const clipEndPosition = finalPosition + clipDuration;
+        
+        // Check for collisions with other clips on the target track
+        const otherClips = targetTrack.clips.filter(c => c.id !== clipId);
+        
+        for (const otherClip of otherClips) {
+          const otherStart = otherClip.timeline_position;
+          const otherEnd = otherClip.timeline_position + (otherClip.end_time - otherClip.start_time);
+          
+          // Check if clips would overlap
+          if (finalPosition < otherEnd && clipEndPosition > otherStart) {
+            // Collision detected - slide to avoid overlap
+            if (finalPosition < otherStart) {
+              // Moving clip starts before other clip - snap to just before it
+              finalPosition = Math.max(0, otherStart - clipDuration);
+              console.log(`🔄 SLIDE: Clip ${clipId} slid to ${finalPosition.toFixed(2)}s to avoid collision`);
+            } else {
+              // Moving clip starts after other clip start - snap to just after it
+              finalPosition = otherEnd;
+              console.log(`🔄 SLIDE: Clip ${clipId} slid to ${finalPosition.toFixed(2)}s to avoid collision`);
+            }
+            break; // Only handle one collision at a time
+          }
+        }
       }
 
       // Optimistic update
@@ -378,6 +529,7 @@ export const MultiTrackTimeline: React.FC<MultiTrackTimelineProps> = ({ classNam
       });
 
       // Sync with backend
+      console.log(`🌐 API: Sending move request for clip ${clipId} to track ${newTrackId} at ${finalPosition}`);
       const response = await fetch('/api/clips/move', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -390,9 +542,13 @@ export const MultiTrackTimeline: React.FC<MultiTrackTimelineProps> = ({ classNam
 
       if (!response.ok) {
         // Revert on error
+        console.error(`❌ API: Move failed with status ${response.status}`);
         fetchTracks();
         throw new Error('Failed to move clip');
       }
+      
+      const result = await response.json();
+      console.log(`✅ API: Move successful`, result);
 
       console.log(`Moved clip ${clipId} to track ${newTrackId} at position ${finalPosition}${snapEnabled ? ' (snapped)' : ''}`);
     } catch (error) {
@@ -438,6 +594,65 @@ export const MultiTrackTimeline: React.FC<MultiTrackTimelineProps> = ({ classNam
       fetchTracks();
     }
   }, [tracks, fetchTracks]);
+
+  // Handle clip removal
+  const handleRemoveClip = useCallback(async (clipId: string) => {
+    try {
+      const response = await fetch(`/api/clips/${clipId}`, {
+        method: 'DELETE'
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to remove clip');
+      }
+      
+      // Update local state
+      setTracks(prevTracks => 
+        prevTracks.map(track => ({
+          ...track,
+          clips: track.clips.filter(clip => clip.id !== clipId)
+        }))
+      );
+      
+      console.log(`Removed clip ${clipId}`);
+    } catch (error) {
+      console.error('Error removing clip:', error);
+    }
+  }, []);
+
+  // Handle clip trimming
+  const handleTrimClip = useCallback(async (clipId: string, newStart: number, newEnd: number) => {
+    try {
+      const response = await fetch(`/api/clips/${clipId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          start_time: newStart,
+          end_time: newEnd
+        })
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to trim clip');
+      }
+      
+      // Update local state
+      setTracks(prevTracks => 
+        prevTracks.map(track => ({
+          ...track,
+          clips: track.clips.map(clip => 
+            clip.id === clipId 
+              ? { ...clip, start_time: newStart, end_time: newEnd }
+              : clip
+          )
+        }))
+      );
+      
+      console.log(`Trimmed clip ${clipId} to ${newStart}-${newEnd}`);
+    } catch (error) {
+      console.error('Error trimming clip:', error);
+    }
+  }, []);
 
   // Create new track
   const handleCreateTrack = useCallback(async (trackType: 'video' | 'audio') => {
@@ -631,6 +846,8 @@ export const MultiTrackTimeline: React.FC<MultiTrackTimelineProps> = ({ classNam
                 track={track}
                 onDrop={handleClipMove}
                 onToggleTrack={handleToggleTrack}
+                onRemoveClip={handleRemoveClip}
+                onTrimClip={handleTrimClip}
               />
             ))
           )}
